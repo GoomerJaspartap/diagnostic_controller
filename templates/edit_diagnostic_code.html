@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Edit Diagnostic Code - Diagnostic Controller{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-md-10 col-12">
+        <div class="card shadow p-4">
+            <h3 class="mb-3" style="color: #003366;">Edit Diagnostic Code</h3>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+            <form method="POST">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="code" class="form-label">Code</label>
+                        <input type="text" class="form-control" id="code" name="code" required value="{{ code[1] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="description" class="form-label">Description</label>
+                        <input type="text" class="form-control" id="description" name="description" required value="{{ code[2] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="type" class="form-label">Type</label>
+                        <select class="form-select" id="type" name="type" required>
+                            <option value="Temperature" {% if code[3] == 'Temperature' %}selected{% endif %}>Temperature</option>
+                            <option value="Humidity" {% if code[3] == 'Humidity' %}selected{% endif %}>Humidity</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_ip" class="form-label">Modbus IP Address</label>
+                        <input type="text" class="form-control" id="modbus_ip" name="modbus_ip" required value="{{ code[7] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_port" class="form-label">Modbus Port</label>
+                        <input type="number" class="form-control" id="modbus_port" name="modbus_port" required value="{{ code[8] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_unit_id" class="form-label">Modbus Unit ID</label>
+                        <input type="number" class="form-control" id="modbus_unit_id" name="modbus_unit_id" required value="{{ code[9] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_register_type" class="form-label">Register Type</label>
+                        <select class="form-select" id="modbus_register_type" name="modbus_register_type" required>
+                            <option value="Coil" {% if code[10] == 'Coil' %}selected{% endif %}>Coil</option>
+                            <option value="Discrete Input" {% if code[10] == 'Discrete Input' %}selected{% endif %}>Discrete Input</option>
+                            <option value="Holding Register" {% if code[10] == 'Holding Register' %}selected{% endif %}>Holding Register</option>
+                            <option value="Input Register" {% if code[10] == 'Input Register' %}selected{% endif %}>Input Register</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_register_address" class="form-label">Register Address</label>
+                        <input type="number" class="form-control" id="modbus_register_address" name="modbus_register_address" required value="{{ code[11] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_data_type" class="form-label">Data Type</label>
+                        <select class="form-select" id="modbus_data_type" name="modbus_data_type" required>
+                            <option value="int16" {% if code[12] == 'int16' %}selected{% endif %}>Integer (16-bit)</option>
+                            <option value="int32" {% if code[12] == 'int32' %}selected{% endif %}>Integer (32-bit)</option>
+                            <option value="float32" {% if code[12] == 'float32' %}selected{% endif %}>Float (32-bit)</option>
+                            <option value="boolean" {% if code[12] == 'boolean' %}selected{% endif %}>Boolean</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_byte_order" class="form-label">Byte Order</label>
+                        <select class="form-select" id="modbus_byte_order" name="modbus_byte_order" required>
+                            <option value="big-endian" {% if code[13] == 'big-endian' %}selected{% endif %}>Big-endian</option>
+                            <option value="little-endian" {% if code[13] == 'little-endian' %}selected{% endif %}>Little-endian</option>
+                            <option value="word-swapped" {% if code[13] == 'word-swapped' %}selected{% endif %}>Word-swapped (32-bit)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_scaling" class="form-label">Scaling</label>
+                        <input type="text" class="form-control" id="modbus_scaling" name="modbus_scaling" required value="{{ code[14] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_units" class="form-label">Units</label>
+                        <input type="text" class="form-control" id="modbus_units" name="modbus_units" required value="{{ code[15] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_offset" class="form-label">Offset</label>
+                        <input type="text" class="form-control" id="modbus_offset" name="modbus_offset" required value="{{ code[16] }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="modbus_function_code" class="form-label">Function Code</label>
+                        <select class="form-select" id="modbus_function_code" name="modbus_function_code" required>
+                            <option value="01" {% if code[17] == '01' %}selected{% endif %}>Read Coils (01)</option>
+                            <option value="02" {% if code[17] == '02' %}selected{% endif %}>Read Discrete Inputs (02)</option>
+                            <option value="03" {% if code[17] == '03' %}selected{% endif %}>Read Holding Registers (03)</option>
+                            <option value="04" {% if code[17] == '04' %}selected{% endif %}>Read Input Registers (04)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="upper_limit">Upper Limit</label>
+                        <input type="number" step="any" class="form-control" id="upper_limit" name="upper_limit" value="{{ code[18] }}" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="lower_limit">Lower Limit</label>
+                        <input type="number" step="any" class="form-control" id="lower_limit" name="lower_limit" value="{{ code[19] }}" required>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {% if code[20] %}checked{% endif %}>
+                            <label class="form-check-label" for="enabled">Enabled</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 mt-3" style="background-color: #003366; border-color: #003366;">Update Code</button>
+            </form>
+            <div class="mt-3 text-center">
+                <a href="/diagnostic_codes" class="text-decoration-none" style="color: #003366;">&larr; Back to Diagnostic Codes</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

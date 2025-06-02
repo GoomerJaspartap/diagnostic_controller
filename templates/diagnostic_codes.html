@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% block title %}Diagnostic Codes - Diagnostic Controller{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-12">
+        <!-- Search Form -->
+        <div class="card shadow p-4 mb-4">
+            <form method="GET" action="{{ url_for('diagnostic_codes') }}" class="mb-0">
+                <div class="input-group">
+                    <input type="text" class="form-control" name="search" placeholder="Search in all fields..." value="{{ search_query }}">
+                    <button class="btn btn-primary" type="submit" style="background-color: #003366; border-color: #003366;">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                    {% if search_query %}
+                    <a href="{{ url_for('diagnostic_codes') }}" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Clear
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
+        <!-- Temperature Section -->
+        <div class="card shadow p-4 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 style="color: #003366;">Temperature Diagnostic Codes</h2>
+                <a href="/add_diagnostic_code?type=Temperature" class="btn btn-primary" style="background-color: #003366; border-color: #003366;">Add Code</a>
+            </div>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+            <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Description</th>
+                        <th>State</th>
+                        <th>Last Failure</th>
+                        <th>History</th>
+                        <th>Modbus Config</th>
+                        <th>Limits</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if temp_codes %}
+                        {% for code in temp_codes %}
+                        <tr>
+                            <td>{{ code[1] }}</td>
+                            <td>{{ code[2] }}</td>
+                            <td>{{ code[4] }}</td>
+                            <td>{{ code[5] }}</td>
+                            <td>{{ code[6] }}</td>
+                            <td>
+                                <small>
+                                    IP: {{ code[7] }}<br>
+                                    Port: {{ code[8] }}<br>
+                                    Unit ID: {{ code[9] }}<br>
+                                    Register: {{ code[10] }} ({{ code[11] }})<br>
+                                    Type: {{ code[12] }}<br>
+                                    Order: {{ code[13] }}<br>
+                                    Scale: {{ code[14] }} {{ code[15] }}<br>
+                                    Offset: {{ code[16] }}<br>
+                                    Function: {{ code[17] }}
+                                </small>
+                            </td>
+                            <td>
+                                Upper: {{ code[18] }}<br>
+                                Lower: {{ code[19] }}
+                            </td>
+                            <td>
+                                <form action="/toggle_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm {% if code[20] %}btn-success{% else %}btn-secondary{% endif %}">
+                                        {% if code[20] %}Enabled{% else %}Disabled{% endif %}
+                                    </button>
+                                </form>
+                            </td>
+                            <td>
+                                <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning me-2">Edit</a>
+                                <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this code?');">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center">No temperature diagnostic codes found{% if search_query %} matching "{{ search_query }}"{% endif %}</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+
+        <!-- Humidity Section -->
+        <div class="card shadow p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 style="color: #003366;">Humidity Diagnostic Codes</h2>
+                <a href="/add_diagnostic_code?type=Humidity" class="btn btn-primary" style="background-color: #003366; border-color: #003366;">Add Code</a>
+            </div>
+            <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Description</th>
+                        <th>State</th>
+                        <th>Last Failure</th>
+                        <th>History</th>
+                        <th>Modbus Config</th>
+                        <th>Limits</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if humidity_codes %}
+                        {% for code in humidity_codes %}
+                        <tr>
+                            <td>{{ code[1] }}</td>
+                            <td>{{ code[2] }}</td>
+                            <td>{{ code[4] }}</td>
+                            <td>{{ code[5] }}</td>
+                            <td>{{ code[6] }}</td>
+                            <td>
+                                <small>
+                                    IP: {{ code[7] }}<br>
+                                    Port: {{ code[8] }}<br>
+                                    Unit ID: {{ code[9] }}<br>
+                                    Register: {{ code[10] }} ({{ code[11] }})<br>
+                                    Type: {{ code[12] }}<br>
+                                    Order: {{ code[13] }}<br>
+                                    Scale: {{ code[14] }} {{ code[15] }}<br>
+                                    Offset: {{ code[16] }}<br>
+                                    Function: {{ code[17] }}
+                                </small>
+                            </td>
+                            <td>
+                                Upper: {{ code[18] }}<br>
+                                Lower: {{ code[19] }}
+                            </td>
+                            <td>
+                                <form action="/toggle_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm {% if code[20] %}btn-success{% else %}btn-secondary{% endif %}">
+                                        {% if code[20] %}Enabled{% else %}Disabled{% endif %}
+                                    </button>
+                                </form>
+                            </td>
+                            <td>
+                                <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning me-2">Edit</a>
+                                <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this code?');">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center">No humidity diagnostic codes found{% if search_query %} matching "{{ search_query }}"{% endif %}</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

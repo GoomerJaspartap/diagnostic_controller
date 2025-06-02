@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard - Diagnostic Controller{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between mb-3">
+            <div class="d-flex align-items-center">
+                <label for="refreshTime" class="me-2">Refresh Time (seconds):</label>
+                <input type="number" id="refreshTime" class="form-control" style="width: 100px;" min="1" value="5">
+                <button id="updateRefreshTimeBtn" class="btn btn-primary ms-2">
+                    <i class="fas fa-sync"></i> Update
+                </button>
+                <button id="readNowBtn" class="btn btn-success ms-2">
+                    <i class="fas fa-bolt"></i> Read Now
+                </button>
+            </div>
+            <button id="resetHistoryBtn" class="btn btn-warning">
+                <i class="fas fa-history"></i> Reset All History
+            </button>
+        </div>
+        <div id="notification-center">
+            {% if notifications and notifications|length > 0 %}
+            <div class="alert alert-warning mb-4">
+                <strong>Notification Center:</strong>
+                <ul class="mb-0" id="notification-list">
+                    {% for n in notifications %}
+                        <li>
+                            <strong>{{ n[0] }}</strong> ({{ n[1] }}) - <span {% if n[2] == 'Fail' %}style="color: red; font-weight: bold;"{% elif n[2] == 'No Status' %}style="color: orange; font-weight: bold;"{% else %}style="font-weight: bold;"{% endif %}>{{ n[2] }}</span>
+                            {% if n[3] %} | Last Failure: {{ n[3] }}{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card shadow p-4 mb-4">
+                    <h4 style="color: #003366;">Humidity Diagnostics</h4>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Description</th>
+                                    <th>Current Value</th>
+                                    <th>State</th>
+                                    <th>Last Failure</th>
+                                    <th>History</th>
+                                    <th>Last Read</th>
+                                </tr>
+                            </thead>
+                            <tbody id="humidity-codes-body">
+                                {% for code in humidity_codes %}
+                                <tr {% if code[2] == 'Pass' %}style="background-color: #d4edda !important;"{% elif code[2] == 'Fail' %}style="background-color: #f44336 !important; color: #fff;"{% elif code[2] == 'No Status' %}style="background-color: #ffe066 !important;"{% endif %}>
+                                    <td>{{ code[0] }}</td>
+                                    <td>{{ code[1] }}</td>
+                                    <td>{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] }}</td>
+                                    <td><strong>{{ code[2] }}</strong></td>
+                                    <td>{{ code[3] }}</td>
+                                    <td>{{ code[4] }}</td>
+                                    <td>{{ code[8] if code[8] else 'Never' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card shadow p-4 mb-4">
+                    <h4 style="color: #003366;">Temperature Diagnostics</h4>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Description</th>
+                                    <th>Current Value</th>
+                                    <th>State</th>
+                                    <th>Last Failure</th>
+                                    <th>History</th>
+                                    <th>Last Read</th>
+                                </tr>
+                            </thead>
+                            <tbody id="temp-codes-body">
+                                {% for code in temp_codes %}
+                                <tr {% if code[2] == 'Pass' %}style="background-color: #d4edda !important;"{% elif code[2] == 'Fail' %}style="background-color: #f44336 !important; color: #fff;"{% elif code[2] == 'No Status' %}style="background-color: #ffe066 !important;"{% endif %}>
+                                    <td>{{ code[0] }}</td>
+                                    <td>{{ code[1] }}</td>
+                                    <td>{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] }}</td>
+                                    <td><strong>{{ code[2] }}</strong></td>
+                                    <td>{{ code[3] }}</td>
+                                    <td>{{ code[4] }}</td>
+                                    <td>{{ code[8] if code[8] else 'Never' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Add refresh time functionality
+function loadRefreshTime() {
+    fetch('/api/refresh_time')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('refreshTime').value = data.refresh_time;
+        })
+        .catch(error => console.error('Error loading refresh time:', error));
+}
+
+document.getElementById('updateRefreshTimeBtn').addEventListener('click', function() {
+    const newTime = parseInt(document.getElementById('refreshTime').value);
+    if (newTime < 1) {
+        alert('Refresh time must be at least 1 second');
+        return;
+    }
+
+    fetch('/api/refresh_time', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_time: newTime })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Refresh time updated successfully!');
+        } else {
+            alert('Error updating refresh time: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating refresh time. Please try again.');
+    });
+});
+
+// Add Read Now functionality
+document.getElementById('readNowBtn').addEventListener('click', function() {
+    const button = this;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reading...';
+
+    fetch('/api/read_now', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update the diagnostics display
+            updateDiagnostics();
+            // Show success message
+            alert('Modbus read completed successfully!');
+        } else {
+            alert('Error reading Modbus: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error reading Modbus. Please try again.');
+    })
+    .finally(() => {
+        // Re-enable the button
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-bolt"></i> Read Now';
+    });
+});
+
+// Load refresh time when page loads
+loadRefreshTime();
+
+function updateDiagnostics() {
+    fetch('/api/diagnostics')
+        .then(response => response.json())
+        .then(data => {
+            // Update humidity codes
+            const humidityBody = document.getElementById('humidity-codes-body');
+            humidityBody.innerHTML = data.humidity_codes.map(code => `
+                <tr ${code[2] === 'Pass' ? 'style="background-color: #d4edda !important;"' : 
+                     code[2] === 'Fail' ? 'style="background-color: #f44336 !important; color: #fff;"' : 
+                     'style="background-color: #ffe066 !important;"'}>
+                    <td>${code[0]}</td>
+                    <td>${code[1]}</td>
+                    <td>${code[7] !== null ? code[7] + ' ' + code[6] : 'N/A'}</td>
+                    <td><strong>${code[2]}</strong></td>
+                    <td>${code[3] || ''}</td>
+                    <td>${code[4]}</td>
+                    <td>${code[8] || 'Never'}</td>
+                </tr>
+            `).join('');
+
+            // Update temperature codes
+            const tempBody = document.getElementById('temp-codes-body');
+            tempBody.innerHTML = data.temp_codes.map(code => `
+                <tr ${code[2] === 'Pass' ? 'style="background-color: #d4edda !important;"' : 
+                     code[2] === 'Fail' ? 'style="background-color: #f44336 !important; color: #fff;"' : 
+                     'style="background-color: #ffe066 !important;"'}>
+                    <td>${code[0]}</td>
+                    <td>${code[1]}</td>
+                    <td>${code[7] !== null ? code[7] + ' ' + code[6] : 'N/A'}</td>
+                    <td><strong>${code[2]}</strong></td>
+                    <td>${code[3] || ''}</td>
+                    <td>${code[4]}</td>
+                    <td>${code[8] || 'Never'}</td>
+                </tr>
+            `).join('');
+
+            // Update notifications
+            const notificationCenter = document.getElementById('notification-center');
+            if (data.notifications && data.notifications.length > 0) {
+                notificationCenter.innerHTML = `
+                    <div class="alert alert-warning mb-4">
+                        <strong>Notification Center:</strong>
+                        <ul class="mb-0" id="notification-list">
+                            ${data.notifications.map(n => `
+                                <li>
+                                    <strong>${n[0]}</strong> (${n[1]}) - 
+                                    <span style="${n[2] === 'Fail' ? 'color: red; font-weight: bold;' : 
+                                                 n[2] === 'No Status' ? 'color: orange; font-weight: bold;' : 
+                                                 'font-weight: bold;'}">${n[2]}</span>
+                                    ${n[3] ? ` | Last Failure: ${n[3]}` : ''}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                `;
+            } else {
+                notificationCenter.innerHTML = '';
+            }
+        })
+        .catch(error => console.error('Error fetching diagnostics:', error));
+}
+
+// Add reset history functionality
+document.getElementById('resetHistoryBtn').addEventListener('click', function() {
+    if (confirm('Are you sure you want to reset all diagnostic code histories? This will clear all failure records and set states to "No Status".')) {
+        fetch('/api/reset_history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Immediately update the display
+                updateDiagnostics();
+                // Show success message
+                alert('History reset successfully!');
+            } else {
+                alert('Error resetting history: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error resetting history. Please try again.');
+        });
+    }
+});
+
+// Update every second
+setInterval(updateDiagnostics, 1000);
+</script>
+{% endblock %} 

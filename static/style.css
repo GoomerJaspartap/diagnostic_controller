@@ -1,0 +1,37 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.card {
+    border-radius: 12px;
+    border: none;
+}
+
+.btn-primary {
+    background-color: #003366 !important;
+    border-color: #003366 !important;
+}
+
+.btn-outline-primary {
+    color: #003366 !important;
+    border-color: #003366 !important;
+}
+
+.btn-outline-primary:hover {
+    background-color: #003366 !important;
+    color: #fff !important;
+}
+
+.navbar {
+    border-bottom: 2px solid #F47C20;
+}
+
+h3, h2 {
+    color: #003366;
+}
+
+.alert-danger {
+    background-color: #F47C20;
+    color: #fff;
+    border: none;
+} 

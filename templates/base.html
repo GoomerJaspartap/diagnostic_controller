@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Diagnostic Controller{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-light bg-white shadow-sm mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="/dashboard">
+                <img src="/static/logo.png" alt="Company Logo" style="height: 40px; margin-right: 10px;">
+                <span style="color: #003366; font-weight: bold;">Diagnostic Controller</span>
+            </a>
+            <div class="d-flex align-items-center">
+                <a href="/dashboard" class="btn btn-secondary me-2" style="background-color: #e9ecef; border-color: #003366; color: #003366;">Dashboard</a>
+                <a href="/contacts" class="btn btn-info me-2" style="background-color: #003366; border-color: #003366; color: #fff;">Emergency Contacts</a>
+                <a href="/diagnostic_codes" class="btn btn-warning me-2" style="background-color: #F4D03F; border-color: #F4D03F; color: #003366;">Diagnostic Codes</a>
+                <a href="/add_user" class="btn btn-success me-2" style="background-color: #F47C20; border-color: #F47C20; color: #fff;">Add User</a>
+                <form action="/logout" method="get" class="mb-0">
+                    <button class="btn btn-outline-primary" type="submit" style="color: #003366; border-color: #003366;">Logout</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html> 
