@@ -66,14 +66,14 @@ A comprehensive web-based system for monitoring and managing industrial diagnost
 ## Setup Instructions
 
 1. Install Python dependencies:
-```bash
+   ```bash
 pip install flask pymodbus werkzeug
-```
+   ```
 
 2. Initialize the database:
-```bash
-python app.py
-```
+   ```bash
+   python app.py
+   ```
 
 3. Configure the system:
    - Set up Modbus device connections

@@ -277,7 +277,9 @@ def main():
             emails, phone_numbers = get_contacts()
             subject = "Fault Detected"
             message = "Fault Detected"
-            send_alert(emails, phone_numbers, subject, message, alert_updates)
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            refresh_time = get_refresh_time()
+            send_alert(emails, phone_numbers, subject, message, alert_updates, current_time, refresh_time)
 
 if __name__ == "__main__":
     while True:

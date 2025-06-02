@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-def send_status_email(recipients, subject, message, table_data,text):
+def send_status_email(recipients, subject, message, table_data, text, current_time, refresh_time):
     # Get email credentials from environment variables
     sender_email = os.getenv('SENDER_EMAIL')
     password = os.getenv('EMAIL_PASSWORD')
@@ -37,6 +37,11 @@ def send_status_email(recipients, subject, message, table_data,text):
     <div style=\"background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 30px;\">
         <h1 style=\"color: #1a2a44; font-size: 24px; margin-bottom: 20px; text-align: center;\">Status Report</h1>
         <p style=\"font-size: 16px; margin-bottom: 20px;\">{message}</p>
+        
+        <div style=\"background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;\">
+            <p style=\"margin: 5px 0;\"><strong>Last Read Time:</strong> {current_time}</p>
+            <p style=\"margin: 5px 0;\"><strong>Refresh Time:</strong> {refresh_time} seconds</p>
+        </div>
 """
     
     # Create a table for each diagnostic type
@@ -70,36 +75,36 @@ def send_status_email(recipients, subject, message, table_data,text):
         </table>
 """
     
-    html += """        <p style=\"font-size: 12px; color: #7f8c8d; text-align: center; margin-top: 20px;\">Generated on May 14, 2025. Do not reply to this email.</p>
+    html += f"""        <p style=\"font-size: 12px; color: #7f8c8d; text-align: center; margin-top: 20px;\">Generated on {current_time}. Do not reply to this email.</p>
     </div>
 
     <!-- Inline CSS for hover and responsiveness -->
     <style>
-        tr:hover { background-color: #f1f3f5 !important; }
-        @media only screen and (max-width: 600px) {
-            table, thead, tbody, th, td, tr { display: block; }
-            thead tr { position: absolute; top: -9999px; left: -9999px; }
-            tr { border: 1px solid #e0e0e0; margin-bottom: 10px; }
-            td { 
+        tr:hover {{ background-color: #f1f3f5 !important; }}
+        @media only screen and (max-width: 600px) {{
+            table, thead, tbody, th, td, tr {{ display: block; }}
+            thead tr {{ position: absolute; top: -9999px; left: -9999px; }}
+            tr {{ border: 1px solid #e0e0e0; margin-bottom: 10px; }}
+            td {{ 
                 border: none; 
                 border-bottom: 1px solid #e0e0e0; 
                 position: relative; 
                 padding-left: 50%; 
                 text-align: right; 
-            }
-            td:before { 
+            }}
+            td:before {{ 
                 position: absolute; 
                 left: 12px; 
                 content: attr(data-label); 
                 font-weight: bold; 
                 white-space: nowrap; 
-            }
-            td:nth-of-type(1):before { content: \"Code\"; }
-            td:nth-of-type(2):before { content: \"Description\"; }
-            td:nth-of-type(3):before { content: \"State\"; }
-            td:nth-of-type(4):before { content: \"Last Failure\"; }
-            td:nth-of-type(5):before { content: \"History Count\"; }
-        }
+            }}
+            td:nth-of-type(1):before {{ content: \"Code\"; }}
+            td:nth-of-type(2):before {{ content: \"Description\"; }}
+            td:nth-of-type(3):before {{ content: \"State\"; }}
+            td:nth-of-type(4):before {{ content: \"Last Failure\"; }}
+            td:nth-of-type(5):before {{ content: \"History Count\"; }}
+        }}
     </style>
 </body>
 </html>"""
