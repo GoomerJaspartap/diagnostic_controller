@@ -29,6 +29,18 @@
                     <input type="email" class="form-control" id="email" name="email" required value="{{ email|default('') }}">
                     <div class="invalid-feedback">Invalid email address format.</div>
                 </div>
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="enable_sms" name="enable_sms" checked>
+                        <label class="form-check-label" for="enable_sms">Enable SMS Notifications</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="enable_email" name="enable_email" checked>
+                        <label class="form-check-label" for="enable_email">Enable Email Notifications</label>
+                    </div>
+                </div>
                 <button type="submit" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;" id="submitBtn" disabled>Add Contact</button>
             </form>
             <script>

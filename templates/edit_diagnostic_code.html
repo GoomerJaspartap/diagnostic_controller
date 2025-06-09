@@ -30,79 +30,123 @@
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label for="modbus_ip" class="form-label">Modbus IP Address</label>
-                        <input type="text" class="form-control" id="modbus_ip" name="modbus_ip" required value="{{ code[7] }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_port" class="form-label">Modbus Port</label>
-                        <input type="number" class="form-control" id="modbus_port" name="modbus_port" required value="{{ code[8] }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_unit_id" class="form-label">Modbus Unit ID</label>
-                        <input type="number" class="form-control" id="modbus_unit_id" name="modbus_unit_id" required value="{{ code[9] }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_register_type" class="form-label">Register Type</label>
-                        <select class="form-select" id="modbus_register_type" name="modbus_register_type" required>
-                            <option value="Coil" {% if code[10] == 'Coil' %}selected{% endif %}>Coil</option>
-                            <option value="Discrete Input" {% if code[10] == 'Discrete Input' %}selected{% endif %}>Discrete Input</option>
-                            <option value="Holding Register" {% if code[10] == 'Holding Register' %}selected{% endif %}>Holding Register</option>
-                            <option value="Input Register" {% if code[10] == 'Input Register' %}selected{% endif %}>Input Register</option>
+                        <label for="data_source_type" class="form-label">Data Source Type</label>
+                        <select class="form-select" id="data_source_type" name="data_source_type" required onchange="toggleDataSourceFields()">
+                            <option value="modbus" {% if code[7] == 'modbus' %}selected{% endif %}>Modbus</option>
+                            <option value="mqtt" {% if code[7] == 'mqtt' %}selected{% endif %}>MQTT</option>
                         </select>
                     </div>
+
+                    <!-- Modbus Configuration -->
+                    <div id="modbus_config" class="row g-3" {% if code[7] != 'modbus' %}style="display: none;"{% endif %}>
+                        <div class="col-md-6">
+                            <label for="modbus_ip" class="form-label">Modbus IP Address</label>
+                            <input type="text" class="form-control" id="modbus_ip" name="modbus_ip" value="{{ code[8] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_port" class="form-label">Modbus Port</label>
+                            <input type="number" class="form-control" id="modbus_port" name="modbus_port" value="{{ code[9] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_unit_id" class="form-label">Modbus Unit ID</label>
+                            <input type="number" class="form-control" id="modbus_unit_id" name="modbus_unit_id" value="{{ code[10] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_register_type" class="form-label">Register Type</label>
+                            <select class="form-select" id="modbus_register_type" name="modbus_register_type">
+                                <option value="Coil" {% if code[11] == 'Coil' %}selected{% endif %}>Coil</option>
+                                <option value="Discrete Input" {% if code[11] == 'Discrete Input' %}selected{% endif %}>Discrete Input</option>
+                                <option value="Holding Register" {% if code[11] == 'Holding Register' %}selected{% endif %}>Holding Register</option>
+                                <option value="Input Register" {% if code[11] == 'Input Register' %}selected{% endif %}>Input Register</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_register_address" class="form-label">Register Address</label>
+                            <input type="number" class="form-control" id="modbus_register_address" name="modbus_register_address" value="{{ code[12] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_data_type" class="form-label">Data Type</label>
+                            <select class="form-select" id="modbus_data_type" name="modbus_data_type">
+                                <option value="int16" {% if code[13] == 'int16' %}selected{% endif %}>Integer (16-bit)</option>
+                                <option value="int32" {% if code[13] == 'int32' %}selected{% endif %}>Integer (32-bit)</option>
+                                <option value="float32" {% if code[13] == 'float32' %}selected{% endif %}>Float (32-bit)</option>
+                                <option value="boolean" {% if code[13] == 'boolean' %}selected{% endif %}>Boolean</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_byte_order" class="form-label">Byte Order</label>
+                            <select class="form-select" id="modbus_byte_order" name="modbus_byte_order">
+                                <option value="big-endian" {% if code[14] == 'big-endian' %}selected{% endif %}>Big-endian</option>
+                                <option value="little-endian" {% if code[14] == 'little-endian' %}selected{% endif %}>Little-endian</option>
+                                <option value="word-swapped" {% if code[14] == 'word-swapped' %}selected{% endif %}>Word-swapped (32-bit)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_scaling" class="form-label">Scaling</label>
+                            <input type="text" class="form-control" id="modbus_scaling" name="modbus_scaling" value="{{ code[15] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_units" class="form-label">Units</label>
+                            <input type="text" class="form-control" id="modbus_units" name="modbus_units" value="{{ code[16] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_offset" class="form-label">Offset</label>
+                            <input type="text" class="form-control" id="modbus_offset" name="modbus_offset" value="{{ code[17] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_function_code" class="form-label">Function Code</label>
+                            <select class="form-select" id="modbus_function_code" name="modbus_function_code">
+                                <option value="01" {% if code[18] == '01' %}selected{% endif %}>Read Coils (01)</option>
+                                <option value="02" {% if code[18] == '02' %}selected{% endif %}>Read Discrete Inputs (02)</option>
+                                <option value="03" {% if code[18] == '03' %}selected{% endif %}>Read Holding Registers (03)</option>
+                                <option value="04" {% if code[18] == '04' %}selected{% endif %}>Read Input Registers (04)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- MQTT Configuration -->
+                    <div id="mqtt_config" class="row g-3" {% if code[7] != 'mqtt' %}style="display: none;"{% endif %}>
+                        <div class="col-md-6">
+                            <label for="mqtt_broker" class="form-label">MQTT Broker</label>
+                            <input type="text" class="form-control" id="mqtt_broker" name="mqtt_broker" value="{{ code[19] }}" placeholder="e.g., localhost or broker.example.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_port" class="form-label">MQTT Port</label>
+                            <input type="number" class="form-control" id="mqtt_port" name="mqtt_port" value="{{ code[20] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_topic" class="form-label">MQTT Topic</label>
+                            <input type="text" class="form-control" id="mqtt_topic" name="mqtt_topic" value="{{ code[21] }}" placeholder="e.g., sensors/temperature/1">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_username" class="form-label">MQTT Username</label>
+                            <input type="text" class="form-control" id="mqtt_username" name="mqtt_username" value="{{ code[22] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_password" class="form-label">MQTT Password</label>
+                            <input type="password" class="form-control" id="mqtt_password" name="mqtt_password" value="{{ code[23] }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_qos" class="form-label">MQTT QoS Level</label>
+                            <select class="form-select" id="mqtt_qos" name="mqtt_qos">
+                                <option value="0" {% if code[24] == 0 %}selected{% endif %}>0 - At most once</option>
+                                <option value="1" {% if code[24] == 1 %}selected{% endif %}>1 - At least once</option>
+                                <option value="2" {% if code[24] == 2 %}selected{% endif %}>2 - Exactly once</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="col-md-6">
-                        <label for="modbus_register_address" class="form-label">Register Address</label>
-                        <input type="number" class="form-control" id="modbus_register_address" name="modbus_register_address" required value="{{ code[11] }}">
+                        <label for="upper_limit" class="form-label">Upper Limit</label>
+                        <input type="number" step="any" class="form-control" id="upper_limit" name="upper_limit" value="{{ code[25] }}" required>
                     </div>
                     <div class="col-md-6">
-                        <label for="modbus_data_type" class="form-label">Data Type</label>
-                        <select class="form-select" id="modbus_data_type" name="modbus_data_type" required>
-                            <option value="int16" {% if code[12] == 'int16' %}selected{% endif %}>Integer (16-bit)</option>
-                            <option value="int32" {% if code[12] == 'int32' %}selected{% endif %}>Integer (32-bit)</option>
-                            <option value="float32" {% if code[12] == 'float32' %}selected{% endif %}>Float (32-bit)</option>
-                            <option value="boolean" {% if code[12] == 'boolean' %}selected{% endif %}>Boolean</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_byte_order" class="form-label">Byte Order</label>
-                        <select class="form-select" id="modbus_byte_order" name="modbus_byte_order" required>
-                            <option value="big-endian" {% if code[13] == 'big-endian' %}selected{% endif %}>Big-endian</option>
-                            <option value="little-endian" {% if code[13] == 'little-endian' %}selected{% endif %}>Little-endian</option>
-                            <option value="word-swapped" {% if code[13] == 'word-swapped' %}selected{% endif %}>Word-swapped (32-bit)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_scaling" class="form-label">Scaling</label>
-                        <input type="text" class="form-control" id="modbus_scaling" name="modbus_scaling" required value="{{ code[14] }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_units" class="form-label">Units</label>
-                        <input type="text" class="form-control" id="modbus_units" name="modbus_units" required value="{{ code[15] }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_offset" class="form-label">Offset</label>
-                        <input type="text" class="form-control" id="modbus_offset" name="modbus_offset" required value="{{ code[16] }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_function_code" class="form-label">Function Code</label>
-                        <select class="form-select" id="modbus_function_code" name="modbus_function_code" required>
-                            <option value="01" {% if code[17] == '01' %}selected{% endif %}>Read Coils (01)</option>
-                            <option value="02" {% if code[17] == '02' %}selected{% endif %}>Read Discrete Inputs (02)</option>
-                            <option value="03" {% if code[17] == '03' %}selected{% endif %}>Read Holding Registers (03)</option>
-                            <option value="04" {% if code[17] == '04' %}selected{% endif %}>Read Input Registers (04)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="upper_limit">Upper Limit</label>
-                        <input type="number" step="any" class="form-control" id="upper_limit" name="upper_limit" value="{{ code[18] }}" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="lower_limit">Lower Limit</label>
-                        <input type="number" step="any" class="form-control" id="lower_limit" name="lower_limit" value="{{ code[19] }}" required>
+                        <label for="lower_limit" class="form-label">Lower Limit</label>
+                        <input type="number" step="any" class="form-control" id="lower_limit" name="lower_limit" value="{{ code[26] }}" required>
                     </div>
                     <div class="col-md-6 d-flex align-items-end">
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {% if code[20] %}checked{% endif %}>
+                            <input class="form-check-input" type="checkbox" id="enabled" name="enabled" {% if code[27] %}checked{% endif %}>
                             <label class="form-check-label" for="enabled">Enabled</label>
                         </div>
                     </div>
@@ -115,4 +159,43 @@
         </div>
     </div>
 </div>
+
+<script>
+function toggleDataSourceFields() {
+    const dataSourceType = document.getElementById('data_source_type').value;
+    const modbusConfig = document.getElementById('modbus_config');
+    const mqttConfig = document.getElementById('mqtt_config');
+    
+    if (dataSourceType === 'modbus') {
+        modbusConfig.style.display = 'flex';
+        mqttConfig.style.display = 'none';
+        // Make Modbus fields required
+        modbusConfig.querySelectorAll('input, select').forEach(field => {
+            field.required = true;
+        });
+        // Make MQTT fields not required
+        mqttConfig.querySelectorAll('input, select').forEach(field => {
+            field.required = false;
+        });
+    } else {
+        modbusConfig.style.display = 'none';
+        mqttConfig.style.display = 'flex';
+        // Make only essential MQTT fields required
+        mqttConfig.querySelectorAll('input, select').forEach(field => {
+            if (field.id === 'mqtt_broker' || field.id === 'mqtt_port' || field.id === 'mqtt_topic') {
+                field.required = true;
+            } else {
+                field.required = false;
+            }
+        });
+        // Make Modbus fields not required
+        modbusConfig.querySelectorAll('input, select').forEach(field => {
+            field.required = false;
+        });
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', toggleDataSourceFields);
+</script>
 {% endblock %} 

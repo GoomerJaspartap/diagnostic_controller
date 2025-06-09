@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Diagnostic Controller{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block head %}{% endblock %}
 </head>
 <body class="bg-light">
     <nav class="navbar navbar-light bg-white shadow-sm mb-4">
@@ -14,19 +17,79 @@
                 <img src="/static/logo.png" alt="Company Logo" style="height: 40px; margin-right: 10px;">
                 <span style="color: #003366; font-weight: bold;">Diagnostic Controller</span>
             </a>
-            <div class="d-flex align-items-center">
+            <!-- Desktop Navigation -->
+            <div class="d-none d-md-flex align-items-center">
                 <a href="/dashboard" class="btn btn-secondary me-2" style="background-color: #e9ecef; border-color: #003366; color: #003366;">Dashboard</a>
                 <a href="/contacts" class="btn btn-info me-2" style="background-color: #003366; border-color: #003366; color: #fff;">Emergency Contacts</a>
                 <a href="/diagnostic_codes" class="btn btn-warning me-2" style="background-color: #F4D03F; border-color: #F4D03F; color: #003366;">Diagnostic Codes</a>
+                {% if request.path.startswith('/logs') %}
+                <a href="/logs" class="btn me-2 btn-primary text-white" style="border-color: #003366;">Logs</a>
+                {% else %}
+                <a href="/logs" class="btn me-2 btn-outline-primary" style="color: #003366; border-color: #003366;">Logs</a>
+                {% endif %}
                 <a href="/add_user" class="btn btn-success me-2" style="background-color: #F47C20; border-color: #F47C20; color: #fff;">Add User</a>
                 <form action="/logout" method="get" class="mb-0">
                     <button class="btn btn-outline-primary" type="submit" style="color: #003366; border-color: #003366;">Logout</button>
                 </form>
+            </div>
+            <!-- Mobile Navigation -->
+            <div class="d-md-none">
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <div class="d-flex flex-column">
+                        <a href="/dashboard" class="btn btn-secondary mb-2" style="background-color: #e9ecef; border-color: #003366; color: #003366;">Dashboard</a>
+                        <a href="/contacts" class="btn btn-info mb-2" style="background-color: #003366; border-color: #003366; color: #fff;">Emergency Contacts</a>
+                        <a href="/diagnostic_codes" class="btn btn-warning mb-2" style="background-color: #F4D03F; border-color: #F4D03F; color: #003366;">Diagnostic Codes</a>
+                        {% if request.path.startswith('/logs') %}
+                        <a href="/logs" class="btn mb-2 btn-primary text-white" style="border-color: #003366;">Logs</a>
+                        {% else %}
+                        <a href="/logs" class="btn mb-2 btn-outline-primary" style="color: #003366; border-color: #003366;">Logs</a>
+                        {% endif %}
+                        <a href="/add_user" class="btn btn-success mb-2" style="background-color: #F47C20; border-color: #F47C20; color: #fff;">Add User</a>
+                        <form action="/logout" method="get" class="mb-0">
+                            <button class="btn btn-outline-primary w-100" type="submit" style="color: #003366; border-color: #003366;">Logout</button>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </nav>
     <div class="container">
         {% block content %}{% endblock %}
     </div>
+    <script>
+    let lastErrorEvent = null;
+    function playBeep() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = ctx.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, ctx.currentTime); // 880 Hz
+            oscillator.connect(ctx.destination);
+            oscillator.start();
+            setTimeout(() => {
+                oscillator.stop();
+                ctx.close();
+            }, 200);
+        } catch (e) { /* ignore */ }
+    }
+    function pollErrorEvent() {
+        fetch('/api/last_error_event')
+            .then(res => res.json())
+            .then(data => {
+                if (data.last_error_event && data.last_error_event !== lastErrorEvent) {
+                    if (lastErrorEvent !== null) { // Don't beep on first load
+                        playBeep();
+                    }
+                    lastErrorEvent = data.last_error_event;
+                }
+            })
+            .catch(() => {});
+    }
+    setInterval(pollErrorEvent, 3000);
+    window.addEventListener('DOMContentLoaded', pollErrorEvent);
+    </script>
 </body>
 </html> 

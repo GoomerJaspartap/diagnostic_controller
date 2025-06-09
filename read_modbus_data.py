@@ -1,17 +1,31 @@
 from pymodbus.client import ModbusTcpClient
-import sqlite3
+import psycopg2
 import time
 from datetime import datetime
 import struct
-from update_diagnostic import update_diagnostics_batch
+import os
+from dotenv import load_dotenv
+
 from AlertAPI import send_alert
+
+# Load environment variables
+load_dotenv()
+
+# PostgreSQL configuration
+DB_CONFIG = {
+    'dbname': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'host': os.getenv('DB_HOST'),
+    'port': os.getenv('DB_PORT')
+}
 
 def init_db():
     """Initialize database connection"""
-    return sqlite3.connect('diagnostics.db')
+    return psycopg2.connect(**DB_CONFIG)
 
 def get_active_diagnostics():
-    """Get all active diagnostic codes from the database"""
+    """Get all active Modbus diagnostic codes from the database"""
     conn = init_db()
     c = conn.cursor()
     c.execute('''
@@ -21,7 +35,7 @@ def get_active_diagnostics():
                modbus_units, modbus_offset, modbus_function_code,
                upper_limit, lower_limit
         FROM diagnostic_codes 
-        WHERE enabled = 1
+        WHERE enabled = 1 AND data_source_type = 'modbus'
     ''')
     diagnostics = c.fetchall()
     conn.close()
@@ -124,55 +138,83 @@ def get_refresh_time():
     conn.close()
     return result[0] if result else 5  # Default to 5 seconds if not found
 
+def update_last_error_event():
+    conn = init_db()
+    c = conn.cursor()
+    now_str = format_datetime(datetime.now())
+    c.execute('UPDATE app_settings SET last_error_event = %s WHERE id = 1', (now_str,))
+    conn.commit()
+    conn.close()
+
 def update_diagnostics_batch(status_updates):
     """Update multiple diagnostic codes in a batch"""
     conn = init_db()
     c = conn.cursor()
     successful = []
     errors = []
-    
+    now_str = format_datetime(datetime.now())
+    error_triggered = False
     for update in status_updates:
         try:
             if update['state'] in ('Fail', 'No Status'):
+                error_triggered = True
                 c.execute('''
                     UPDATE diagnostic_codes 
-                    SET state = ?,
-                        current_value = ?,
-                        last_read_time = CURRENT_TIMESTAMP,
-                        last_failure = CURRENT_TIMESTAMP,
+                    SET state = %s,
+                        current_value = %s,
+                        last_read_time = %s,
+                        last_failure = %s,
                         history_count = COALESCE(history_count, 0) + 1
-                    WHERE code = ?
-                ''', (update['state'], update.get('value'), update['code']))
+                    WHERE code = %s
+                ''', (update['state'], update.get('value'), now_str, now_str, update['code']))
             else:
                 c.execute('''
                     UPDATE diagnostic_codes 
-                    SET state = ?,
-                        current_value = ?,
-                        last_read_time = CURRENT_TIMESTAMP
-                    WHERE code = ?
-                ''', (update['state'], update.get('value'), update['code']))
+                    SET state = %s,
+                        current_value = %s,
+                        last_read_time = %s
+                    WHERE code = %s
+                ''', (update['state'], update.get('value'), now_str, update['code']))
+            # Log to logs only for 'Fail' and 'No Status'
+            if update['state'] in ('Fail', 'No Status'):
+                c.execute('''SELECT description, last_failure, history_count, type, current_value FROM diagnostic_codes WHERE code = %s''', (update['code'],))
+                row = c.fetchone()
+                c.execute('''
+                    INSERT INTO logs (code, description, state, last_failure, history_count, type, value)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    update['code'],
+                    row[0] if row else '',
+                    update['state'],
+                    row[1] if row else '',
+                    row[2] if row else 0,
+                    row[3] if row else '',
+                    row[4] if row else None
+                ))
             successful.append(update['code'])
         except Exception as e:
             errors.append((update['code'], str(e)))
-    
     conn.commit()
     conn.close()
+    if error_triggered:
+        update_last_error_event()
     return successful, errors
 
 def get_contacts():
+    """Get contact information for alerts"""
     conn = init_db()
     c = conn.cursor()
-    c.execute('SELECT email, phone FROM contacts')
+    c.execute('SELECT email, phone, enable_email, enable_sms FROM contacts')
     contacts = c.fetchall()
-    emails = [c[0] for c in contacts]
-    phone_numbers = [c[1] for c in contacts]
+    emails = [c[0] for c in contacts if c[2] == 1]  # Only get emails where enable_email is 1
+    phone_numbers = [c[1] for c in contacts if c[3] == 1]  # Only get phones where enable_sms is 1
     conn.close()
     return emails, phone_numbers
 
 def get_diagnostic_details(code):
     conn = init_db()
     c = conn.cursor()
-    c.execute('SELECT code, description, state, last_failure, history_count, type FROM diagnostic_codes WHERE code = ? AND enabled = 1', (code,))
+    c.execute('SELECT code, description, state, last_failure, history_count, type FROM diagnostic_codes WHERE code = %s AND enabled = 1', (code,))
     row = c.fetchone()
     conn.close()
     if row:
@@ -185,6 +227,16 @@ def get_diagnostic_details(code):
             'type': row[5]
         }
     return None
+
+def format_datetime(dt):
+    if not dt:
+        return ''
+    if isinstance(dt, str):
+        try:
+            dt = datetime.datetime.fromisoformat(dt)
+        except Exception:
+            return dt
+    return dt.strftime('%d %B, %Y %H:%M:%S')
 
 def main():
     # Get active diagnostics
@@ -277,14 +329,14 @@ def main():
             emails, phone_numbers = get_contacts()
             subject = "Fault Detected"
             message = "Fault Detected"
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            current_time = format_datetime(datetime.now())
             refresh_time = get_refresh_time()
             send_alert(emails, phone_numbers, subject, message, alert_updates, current_time, refresh_time)
 
 if __name__ == "__main__":
     while True:
         print("\n" + "="*50)
-        print(f"Reading Modbus data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Reading Modbus data at {format_datetime(datetime.now())}")
         print("="*50)
         
         main()

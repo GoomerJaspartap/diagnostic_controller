@@ -1,6 +1,60 @@
 {% extends 'base.html' %}
 {% block title %}Diagnostic Codes - Diagnostic Controller{% endblock %}
+
 {% block content %}
+<style>
+    /* Custom popover styles */
+    .popover {
+        max-width: 300px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    
+    .popover-body {
+        padding: 10px;
+        text-align: left;
+    }
+    
+    .popover-body strong {
+        color: #003366;
+        display: block;
+        margin-bottom: 5px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 3px;
+    }
+    
+    .popover-body div {
+        margin: 3px 0;
+    }
+    
+    .badge {
+        cursor: pointer;
+        font-size: 0.9em;
+        padding: 6px 10px;
+    }
+    
+    .badge.bg-primary {
+        background-color: #003366 !important;
+    }
+    
+    .badge.bg-success {
+        background-color: #28a745 !important;
+    }
+
+    .btn-group-action {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+    }
+
+    .btn-group-action form {
+        margin: 0;
+    }
+
+    .btn-group-action button {
+        margin: 0;
+    }
+</style>
+
 <div class="row justify-content-center">
     <div class="col-md-12">
         <!-- Search Form -->
@@ -42,7 +96,7 @@
                         <th>State</th>
                         <th>Last Failure</th>
                         <th>History</th>
-                        <th>Modbus Config</th>
+                        <th>Data Source</th>
                         <th>Limits</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -52,40 +106,70 @@
                     {% if temp_codes %}
                         {% for code in temp_codes %}
                         <tr>
-                            <td>{{ code[1] }}</td>
-                            <td>{{ code[2] }}</td>
-                            <td>{{ code[4] }}</td>
-                            <td>{{ code[5] }}</td>
-                            <td>{{ code[6] }}</td>
-                            <td>
-                                <small>
-                                    IP: {{ code[7] }}<br>
-                                    Port: {{ code[8] }}<br>
-                                    Unit ID: {{ code[9] }}<br>
-                                    Register: {{ code[10] }} ({{ code[11] }})<br>
-                                    Type: {{ code[12] }}<br>
-                                    Order: {{ code[13] }}<br>
-                                    Scale: {{ code[14] }} {{ code[15] }}<br>
-                                    Offset: {{ code[16] }}<br>
-                                    Function: {{ code[17] }}
-                                </small>
+                            <td data-label="Code">{{ code[1] }}</td>
+                            <td data-label="Description">{{ code[2] }}</td>
+                            <td data-label="State">{{ code[4] }}</td>
+                            <td data-label="Last Failure">{{ code[5] }}</td>
+                            <td data-label="History">{{ code[6] }}</td>
+                            <td data-label="Data Source">
+                                <span class="badge {% if code[7] == 'modbus' %}bg-primary{% else %}bg-success{% endif %}" 
+                                      data-bs-toggle="popover" 
+                                      data-bs-html="true"
+                                      data-bs-content="{% if code[7] == 'modbus' %}
+                                        <strong>Modbus Configuration</strong>
+                                        <div><i class='fas fa-network-wired'></i> IP: {{ code[8] }}</div>
+                                        <div><i class='fas fa-plug'></i> Port: {{ code[9] }}</div>
+                                        <div><i class='fas fa-microchip'></i> Unit ID: {{ code[10] }}</div>
+                                        <div><i class='fas fa-database'></i> Register: {{ code[11] }} ({{ code[12] }})</div>
+                                        <div><i class='fas fa-code'></i> Type: {{ code[13] }}</div>
+                                        <div><i class='fas fa-sort'></i> Order: {{ code[14] }}</div>
+                                        <div><i class='fas fa-calculator'></i> Scale: {{ code[15] }} {{ code[16] }}</div>
+                                        <div><i class='fas fa-plus-minus'></i> Offset: {{ code[17] }}</div>
+                                        <div><i class='fas fa-function'></i> Function: {{ code[18] }}</div>
+                                      {% else %}
+                                        <strong>MQTT Configuration</strong>
+                                        <div><i class='fas fa-server'></i> Broker: {{ code[19] }}</div>
+                                        <div><i class='fas fa-plug'></i> Port: {{ code[20] }}</div>
+                                        <div><i class='fas fa-broadcast-tower'></i> Topic: {{ code[21] }}</div>
+                                        <div><i class='fas fa-user'></i> Username: {{ code[22] or 'None' }}</div>
+                                        <div><i class='fas fa-shield-alt'></i> QoS: {{ code[24] }}</div>
+                                      {% endif %}">
+                                    <i class="fas {% if code[7] == 'modbus' %}fa-network-wired{% else %}fa-broadcast-tower{% endif %}"></i>
+                                    {{ code[7]|upper }}
+                                </span>
                             </td>
-                            <td>
-                                Upper: {{ code[18] }}<br>
-                                Lower: {{ code[19] }}
+                            <td data-label="Limits">
+                                Upper: {{ code[25] }}<br>
+                                Lower: {{ code[26] }}
                             </td>
-                            <td>
+                            <td data-label="Status">
                                 <form action="/toggle_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm {% if code[20] %}btn-success{% else %}btn-secondary{% endif %}">
-                                        {% if code[20] %}Enabled{% else %}Disabled{% endif %}
+                                    <button type="submit" class="btn btn-sm {% if code[27] %}btn-success{% else %}btn-secondary{% endif %}">
+                                        {% if code[27] %}Enabled{% else %}Disabled{% endif %}
                                     </button>
                                 </form>
                             </td>
-                            <td>
-                                <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning me-2">Edit</a>
-                                <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this code?');">Delete</button>
-                                </form>
+                            <td data-label="Actions">
+                                <div class="btn-group-action">
+                                    <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning" title="Edit">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                    <form action="/duplicate_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-info" title="Duplicate">
+                                            <i class="fas fa-copy"></i> Duplicate
+                                        </button>
+                                    </form>
+                                    <form action="/reset_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-secondary" title="Reset" onclick="return confirm('Are you sure you want to reset this code?');">
+                                            <i class="fas fa-undo"></i> Reset
+                                        </button>
+                                    </form>
+                                    <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Are you sure you want to delete this code?');">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -114,7 +198,7 @@
                         <th>State</th>
                         <th>Last Failure</th>
                         <th>History</th>
-                        <th>Modbus Config</th>
+                        <th>Data Source</th>
                         <th>Limits</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -124,40 +208,70 @@
                     {% if humidity_codes %}
                         {% for code in humidity_codes %}
                         <tr>
-                            <td>{{ code[1] }}</td>
-                            <td>{{ code[2] }}</td>
-                            <td>{{ code[4] }}</td>
-                            <td>{{ code[5] }}</td>
-                            <td>{{ code[6] }}</td>
-                            <td>
-                                <small>
-                                    IP: {{ code[7] }}<br>
-                                    Port: {{ code[8] }}<br>
-                                    Unit ID: {{ code[9] }}<br>
-                                    Register: {{ code[10] }} ({{ code[11] }})<br>
-                                    Type: {{ code[12] }}<br>
-                                    Order: {{ code[13] }}<br>
-                                    Scale: {{ code[14] }} {{ code[15] }}<br>
-                                    Offset: {{ code[16] }}<br>
-                                    Function: {{ code[17] }}
-                                </small>
+                            <td data-label="Code">{{ code[1] }}</td>
+                            <td data-label="Description">{{ code[2] }}</td>
+                            <td data-label="State">{{ code[4] }}</td>
+                            <td data-label="Last Failure">{{ code[5] }}</td>
+                            <td data-label="History">{{ code[6] }}</td>
+                            <td data-label="Data Source">
+                                <span class="badge {% if code[7] == 'modbus' %}bg-primary{% else %}bg-success{% endif %}" 
+                                      data-bs-toggle="popover" 
+                                      data-bs-html="true"
+                                      data-bs-content="{% if code[7] == 'modbus' %}
+                                        <strong>Modbus Configuration</strong>
+                                        <div><i class='fas fa-network-wired'></i> IP: {{ code[8] }}</div>
+                                        <div><i class='fas fa-plug'></i> Port: {{ code[9] }}</div>
+                                        <div><i class='fas fa-microchip'></i> Unit ID: {{ code[10] }}</div>
+                                        <div><i class='fas fa-database'></i> Register: {{ code[11] }} ({{ code[12] }})</div>
+                                        <div><i class='fas fa-code'></i> Type: {{ code[13] }}</div>
+                                        <div><i class='fas fa-sort'></i> Order: {{ code[14] }}</div>
+                                        <div><i class='fas fa-calculator'></i> Scale: {{ code[15] }} {{ code[16] }}</div>
+                                        <div><i class='fas fa-plus-minus'></i> Offset: {{ code[17] }}</div>
+                                        <div><i class='fas fa-function'></i> Function: {{ code[18] }}</div>
+                                      {% else %}
+                                        <strong>MQTT Configuration</strong>
+                                        <div><i class='fas fa-server'></i> Broker: {{ code[19] }}</div>
+                                        <div><i class='fas fa-plug'></i> Port: {{ code[20] }}</div>
+                                        <div><i class='fas fa-broadcast-tower'></i> Topic: {{ code[21] }}</div>
+                                        <div><i class='fas fa-user'></i> Username: {{ code[22] or 'None' }}</div>
+                                        <div><i class='fas fa-shield-alt'></i> QoS: {{ code[24] }}</div>
+                                      {% endif %}">
+                                    <i class="fas {% if code[7] == 'modbus' %}fa-network-wired{% else %}fa-broadcast-tower{% endif %}"></i>
+                                    {{ code[7]|upper }}
+                                </span>
                             </td>
-                            <td>
-                                Upper: {{ code[18] }}<br>
-                                Lower: {{ code[19] }}
+                            <td data-label="Limits">
+                                Upper: {{ code[25] }}<br>
+                                Lower: {{ code[26] }}
                             </td>
-                            <td>
+                            <td data-label="Status">
                                 <form action="/toggle_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm {% if code[20] %}btn-success{% else %}btn-secondary{% endif %}">
-                                        {% if code[20] %}Enabled{% else %}Disabled{% endif %}
+                                    <button type="submit" class="btn btn-sm {% if code[27] %}btn-success{% else %}btn-secondary{% endif %}">
+                                        {% if code[27] %}Enabled{% else %}Disabled{% endif %}
                                     </button>
                                 </form>
                             </td>
-                            <td>
-                                <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning me-2">Edit</a>
-                                <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this code?');">Delete</button>
-                                </form>
+                            <td data-label="Actions">
+                                <div class="btn-group-action">
+                                    <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning" title="Edit">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                    <form action="/duplicate_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-info" title="Duplicate">
+                                            <i class="fas fa-copy"></i> Duplicate
+                                        </button>
+                                    </form>
+                                    <form action="/reset_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-secondary" title="Reset" onclick="return confirm('Are you sure you want to reset this code?');">
+                                            <i class="fas fa-undo"></i> Reset
+                                        </button>
+                                    </form>
+                                    <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
+                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Are you sure you want to delete this code?');">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -172,4 +286,20 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all popovers
+    var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'))
+    var popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
+        return new bootstrap.Popover(popoverTriggerEl, {
+            html: true,
+            placement: 'right',
+            trigger: 'hover',
+            delay: { show: 50, hide: 50 },
+            sanitize: false
+        })
+    })
+});
+</script>
 {% endblock %} 

@@ -22,10 +22,23 @@
                 <div class="mb-3">
                     <label for="phone" class="form-label">Phone</label>
                     <input type="text" class="form-control" id="phone" name="phone" value="{{ contact[2] }}" required>
+                    <small class="form-text text-muted">Format: +[country code][10 digits] (e.g., +12345678901)</small>
                 </div>
                 <div class="mb-3">
                     <label for="email" class="form-label">Email</label>
                     <input type="email" class="form-control" id="email" name="email" value="{{ contact[3] }}" required>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="enable_sms" name="enable_sms" {% if contact[4] %}checked{% endif %}>
+                        <label class="form-check-label" for="enable_sms">Enable SMS Notifications</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="enable_email" name="enable_email" {% if contact[5] %}checked{% endif %}>
+                        <label class="form-check-label" for="enable_email">Enable Email Notifications</label>
+                    </div>
                 </div>
                 <button type="submit" class="btn btn-primary w-100" style="background-color: #003366; border-color: #003366;">Update Contact</button>
             </form>

@@ -30,74 +30,118 @@
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label for="modbus_ip" class="form-label">Modbus IP Address</label>
-                        <input type="text" class="form-control" id="modbus_ip" name="modbus_ip" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_port" class="form-label">Modbus Port</label>
-                        <input type="number" class="form-control" id="modbus_port" name="modbus_port" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_unit_id" class="form-label">Modbus Unit ID</label>
-                        <input type="number" class="form-control" id="modbus_unit_id" name="modbus_unit_id" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_register_type" class="form-label">Register Type</label>
-                        <select class="form-select" id="modbus_register_type" name="modbus_register_type" required>
-                            <option value="Coil">Coil</option>
-                            <option value="Discrete Input">Discrete Input</option>
-                            <option value="Holding Register">Holding Register</option>
-                            <option value="Input Register">Input Register</option>
+                        <label for="data_source_type" class="form-label">Data Source Type</label>
+                        <select class="form-select" id="data_source_type" name="data_source_type" required onchange="toggleDataSourceFields()">
+                            <option value="modbus">Modbus</option>
+                            <option value="mqtt">MQTT</option>
                         </select>
                     </div>
-                    <div class="col-md-6">
-                        <label for="modbus_register_address" class="form-label">Register Address</label>
-                        <input type="number" class="form-control" id="modbus_register_address" name="modbus_register_address" required>
+
+                    <!-- Modbus Configuration -->
+                    <div id="modbus_config" class="row g-3">
+                        <div class="col-md-6">
+                            <label for="modbus_ip" class="form-label">Modbus IP Address</label>
+                            <input type="text" class="form-control" id="modbus_ip" name="modbus_ip">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_port" class="form-label">Modbus Port</label>
+                            <input type="number" class="form-control" id="modbus_port" name="modbus_port">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_unit_id" class="form-label">Modbus Unit ID</label>
+                            <input type="number" class="form-control" id="modbus_unit_id" name="modbus_unit_id">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_register_type" class="form-label">Register Type</label>
+                            <select class="form-select" id="modbus_register_type" name="modbus_register_type">
+                                <option value="Coil">Coil</option>
+                                <option value="Discrete Input">Discrete Input</option>
+                                <option value="Holding Register">Holding Register</option>
+                                <option value="Input Register">Input Register</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_register_address" class="form-label">Register Address</label>
+                            <input type="number" class="form-control" id="modbus_register_address" name="modbus_register_address">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_data_type" class="form-label">Data Type</label>
+                            <select class="form-select" id="modbus_data_type" name="modbus_data_type">
+                                <option value="int16">Integer (16-bit)</option>
+                                <option value="int32">Integer (32-bit)</option>
+                                <option value="float32">Float (32-bit)</option>
+                                <option value="boolean">Boolean</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_byte_order" class="form-label">Byte Order</label>
+                            <select class="form-select" id="modbus_byte_order" name="modbus_byte_order">
+                                <option value="big-endian">Big-endian</option>
+                                <option value="little-endian">Little-endian</option>
+                                <option value="word-swapped">Word-swapped (32-bit)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_scaling" class="form-label">Scaling</label>
+                            <input type="text" class="form-control" id="modbus_scaling" name="modbus_scaling" placeholder="e.g., 0.01 for 24.5°C = 2450">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_units" class="form-label">Units</label>
+                            <input type="text" class="form-control" id="modbus_units" name="modbus_units" placeholder="e.g., °C, Pa, m/s">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_offset" class="form-label">Offset</label>
+                            <input type="text" class="form-control" id="modbus_offset" name="modbus_offset">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modbus_function_code" class="form-label">Function Code</label>
+                            <select class="form-select" id="modbus_function_code" name="modbus_function_code">
+                                <option value="01">Read Coils (01)</option>
+                                <option value="02">Read Discrete Inputs (02)</option>
+                                <option value="03">Read Holding Registers (03)</option>
+                                <option value="04">Read Input Registers (04)</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <label for="modbus_data_type" class="form-label">Data Type</label>
-                        <select class="form-select" id="modbus_data_type" name="modbus_data_type" required>
-                            <option value="int16">Integer (16-bit)</option>
-                            <option value="int32">Integer (32-bit)</option>
-                            <option value="float32">Float (32-bit)</option>
-                            <option value="boolean">Boolean</option>
-                        </select>
+
+                    <!-- MQTT Configuration -->
+                    <div id="mqtt_config" class="row g-3" style="display: none;">
+                        <div class="col-md-6">
+                            <label for="mqtt_broker" class="form-label">MQTT Broker</label>
+                            <input type="text" class="form-control" id="mqtt_broker" name="mqtt_broker" placeholder="e.g., localhost or broker.example.com">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_port" class="form-label">MQTT Port</label>
+                            <input type="number" class="form-control" id="mqtt_port" name="mqtt_port" value="1883">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_topic" class="form-label">MQTT Topic</label>
+                            <input type="text" class="form-control" id="mqtt_topic" name="mqtt_topic" placeholder="e.g., sensors/temperature/1">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_username" class="form-label">MQTT Username</label>
+                            <input type="text" class="form-control" id="mqtt_username" name="mqtt_username">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_password" class="form-label">MQTT Password</label>
+                            <input type="password" class="form-control" id="mqtt_password" name="mqtt_password">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="mqtt_qos" class="form-label">MQTT QoS Level</label>
+                            <select class="form-select" id="mqtt_qos" name="mqtt_qos">
+                                <option value="0">0 - At most once</option>
+                                <option value="1">1 - At least once</option>
+                                <option value="2">2 - Exactly once</option>
+                            </select>
+                        </div>
                     </div>
+
                     <div class="col-md-6">
-                        <label for="modbus_byte_order" class="form-label">Byte Order</label>
-                        <select class="form-select" id="modbus_byte_order" name="modbus_byte_order" required>
-                            <option value="big-endian">Big-endian</option>
-                            <option value="little-endian">Little-endian</option>
-                            <option value="word-swapped">Word-swapped (32-bit)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_scaling" class="form-label">Scaling</label>
-                        <input type="text" class="form-control" id="modbus_scaling" name="modbus_scaling" placeholder="e.g., 0.01 for 24.5°C = 2450" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_units" class="form-label">Units</label>
-                        <input type="text" class="form-control" id="modbus_units" name="modbus_units" placeholder="e.g., °C, Pa, m/s" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_offset" class="form-label">Offset</label>
-                        <input type="text" class="form-control" id="modbus_offset" name="modbus_offset" placeholder="e.g., 0" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="modbus_function_code" class="form-label">Function Code</label>
-                        <select class="form-select" id="modbus_function_code" name="modbus_function_code" required>
-                            <option value="01">Read Coils (01)</option>
-                            <option value="02">Read Discrete Inputs (02)</option>
-                            <option value="03">Read Holding Registers (03)</option>
-                            <option value="04">Read Input Registers (04)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="upper_limit">Upper Limit</label>
+                        <label for="upper_limit" class="form-label">Upper Limit</label>
                         <input type="number" step="any" class="form-control" id="upper_limit" name="upper_limit" required>
                     </div>
                     <div class="col-md-6">
-                        <label for="lower_limit">Lower Limit</label>
+                        <label for="lower_limit" class="form-label">Lower Limit</label>
                         <input type="number" step="any" class="form-control" id="lower_limit" name="lower_limit" required>
                     </div>
                     <div class="col-md-6 d-flex align-items-end">
@@ -115,4 +159,43 @@
         </div>
     </div>
 </div>
+
+<script>
+function toggleDataSourceFields() {
+    const dataSourceType = document.getElementById('data_source_type').value;
+    const modbusConfig = document.getElementById('modbus_config');
+    const mqttConfig = document.getElementById('mqtt_config');
+    
+    if (dataSourceType === 'modbus') {
+        modbusConfig.style.display = 'flex';
+        mqttConfig.style.display = 'none';
+        // Make Modbus fields required
+        modbusConfig.querySelectorAll('input, select').forEach(field => {
+            field.required = true;
+        });
+        // Make MQTT fields not required
+        mqttConfig.querySelectorAll('input, select').forEach(field => {
+            field.required = false;
+        });
+    } else {
+        modbusConfig.style.display = 'none';
+        mqttConfig.style.display = 'flex';
+        // Make only essential MQTT fields required
+        mqttConfig.querySelectorAll('input, select').forEach(field => {
+            if (field.id === 'mqtt_broker' || field.id === 'mqtt_port' || field.id === 'mqtt_topic') {
+                field.required = true;
+            } else {
+                field.required = false;
+            }
+        });
+        // Make Modbus fields not required
+        modbusConfig.querySelectorAll('input, select').forEach(field => {
+            field.required = false;
+        });
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', toggleDataSourceFields);
+</script>
 {% endblock %} 
