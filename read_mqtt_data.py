@@ -65,22 +65,58 @@ def on_message(client, userdata, msg):
         diagnostic = c.fetchone()
         
         if not diagnostic:
+            print(f"[DEBUG] No diagnostic found for topic: {msg.topic}")
             return
 
         # Parse the message payload
         try:
-            payload = json.loads(msg.payload.decode())
-            value = float(payload.get('value', payload))  # Try to get 'value' field or use payload directly
-        except (json.JSONDecodeError, ValueError, TypeError):
+            payload_str = msg.payload.decode().strip()
+            print(f"[DEBUG] Received payload for {diagnostic[1]} (topic: {msg.topic}): {payload_str}")
+            
+            try:
+                # Try to parse as JSON first
+                payload = json.loads(payload_str)
+                if isinstance(payload, dict):
+                    value = payload.get('value')
+                    if value is None:
+                        for v in payload.values():
+                            if isinstance(v, (int, float)):
+                                value = v
+                                break
+                elif isinstance(payload, (int, float)):
+                    value = payload
+                else:
+                    value = None
+            except json.JSONDecodeError:
+                try:
+                    value = float(payload_str.strip())
+                except ValueError:
+                    print(f"[DEBUG] Could not parse value from payload: {payload_str}")
+                    value = None
+
+            print(f"[DEBUG] Parsed value for {diagnostic[1]}: {value}")
+
+        except Exception as e:
+            print(f"[DEBUG] Error parsing payload: {str(e)}")
             value = None
 
         # Check limits and update status
         if value is None:
             status = "No Status"
-        elif float(value) > float(diagnostic[4]) or float(value) < float(diagnostic[5]):
-            status = "Fail"
         else:
-            status = "Pass"
+            try:
+                value_float = float(value)
+                upper_limit = float(diagnostic[4]) if diagnostic[4] is not None else float('inf')
+                lower_limit = float(diagnostic[5]) if diagnostic[5] is not None else float('-inf')
+                if value_float > upper_limit or value_float < lower_limit:
+                    status = "Fail"
+                else:
+                    status = "Pass"
+            except (ValueError, TypeError) as e:
+                print(f"[DEBUG] Error comparing values: {str(e)}")
+                status = "No Status"
+
+        print(f"[DEBUG] Status for {diagnostic[1]}: {status}")
 
         # Only update if status has changed or it's the first reading
         current_state = diagnostic[6]  # Get current state from database
@@ -136,12 +172,12 @@ def on_message(client, userdata, msg):
                 ''', (status, value, now_str, diagnostic[0]))
 
             conn.commit()
-            print(f"Updated diagnostic {diagnostic[1]} ({diagnostic[2]}) to {status} with value {value}")
+            print(f"[DEBUG] Updated diagnostic {diagnostic[1]} ({diagnostic[2]}) to {status} with value {value}")
 
         conn.close()
 
     except Exception as e:
-        print(f"Error processing MQTT message: {str(e)}")
+        print(f"[DEBUG] Error processing MQTT message: {str(e)}")
 
 def get_contacts():
     """Get contact information for alerts"""
