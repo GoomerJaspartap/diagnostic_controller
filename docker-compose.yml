@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.webapp
+    ports:
+      - "5001:5001"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - FLASK_SECRET_KEY=your_secure_secret_key_here
+      - SENDER_EMAIL=jaspartap.goomer@ontariotechu.net
+      - EMAIL_PASSWORD=aurffozevpcanymw
+      - TWILIO_ACCOUNT_SID=ACbf72400ef5ea3e150a0176ec885695e4
+      - TWILIO_AUTH_TOKEN=7a60681a75ec05357c07c303080b9c0a
+      - TWILIO_MESSAGING_SERVICE_SID=MGda9f6c8268b94e60058fbcc1703cdd3d
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"  # MQTT default port
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    networks:
+      - app-network
+
+  mqtt-reader:
+    build:
+      context: .
+      dockerfile: Dockerfile.mqtt
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  modbus-reader:
+    build:
+      context: .
+      dockerfile: Dockerfile.modbus
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data: 

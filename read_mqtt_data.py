@@ -5,8 +5,13 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import json
+import logging
 
 from AlertAPI import send_alert
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG,
+                   format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Load environment variables
 load_dotenv()
@@ -22,6 +27,7 @@ DB_CONFIG = {
 
 def init_db():
     """Initialize database connection"""
+    logging.debug(f"Connecting to database with config: {DB_CONFIG}")
     return psycopg2.connect(**DB_CONFIG)
 
 def get_active_mqtt_diagnostics():
@@ -36,6 +42,9 @@ def get_active_mqtt_diagnostics():
         WHERE enabled = 1 AND data_source_type = 'mqtt'
     ''')
     diagnostics = c.fetchall()
+    logging.debug(f"Found {len(diagnostics)} active MQTT diagnostics")
+    for diag in diagnostics:
+        logging.debug(f"Diagnostic: {diag}")
     conn.close()
     return diagnostics
 
@@ -275,9 +284,9 @@ def check_parameter_changes(active_clients, broker_groups):
 
 def main():
     """Main function to start MQTT client"""
-    print("\n" + "="*50)
-    print(f"Starting MQTT data reader at {format_datetime(datetime.now())}")
-    print("="*50)
+    logging.info("\n" + "="*50)
+    logging.info(f"Starting MQTT data reader at {format_datetime(datetime.now())}")
+    logging.info("="*50)
 
     # Dictionary to keep track of active clients
     active_clients = {}
@@ -292,7 +301,7 @@ def main():
             diagnostics = get_active_mqtt_diagnostics()
             
             if not diagnostics:
-                print("No active MQTT diagnostics found. Checking again in 5 seconds...")
+                logging.info("No active MQTT diagnostics found. Checking again in 5 seconds...")
                 time.sleep(5)
                 continue
 
@@ -304,6 +313,8 @@ def main():
                     broker_groups[broker] = []
                 broker_groups[broker].append(diag)
 
+            logging.debug(f"Broker groups: {broker_groups}")
+
             # Check for parameter changes periodically
             if current_time - last_check_time >= CHECK_INTERVAL:
                 check_parameter_changes(active_clients, broker_groups)
@@ -313,13 +324,13 @@ def main():
             time.sleep(1)
 
         except KeyboardInterrupt:
-            print("\nStopping MQTT clients...")
+            logging.info("\nStopping MQTT clients...")
             for client in active_clients.values():
                 client.loop_stop()
                 client.disconnect()
             break
         except Exception as e:
-            print(f"Error in main loop: {str(e)}")
+            logging.error(f"Error in main loop: {str(e)}")
             time.sleep(5)  # Wait before retrying
 
 if __name__ == "__main__":

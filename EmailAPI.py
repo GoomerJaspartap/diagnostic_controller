@@ -111,7 +111,7 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
 """
     html += f"""            <div style=\"margin-top: 30px; padding-top: 18px; border-top: 1px solid #e0e6ed; text-align: center; color: #7f8c8d; font-size: 13px;\">
                 <div style=\"margin-bottom: 6px;\">Generated on {format_datetime(current_time)}. Do not reply to this email.</div>
-                <div style=\"font-size: 12px;\">&copy; {format_datetime(current_time)[:4]} Automotive Center of Excellence. All rights reserved.</div>
+                <div style=\"font-size: 12px;\">&copy; {datetime.datetime.now().year} Automotive Center of Excellence. All rights reserved.</div>
                 <div style=\"margin-top: 4px;\"><a href=\"https://ace.ontariotechu.ca\" style=\"color: #1a2a44; text-decoration: none;\">ace.ontariotechu.ca</a></div>
             </div>
         </div>
@@ -202,7 +202,7 @@ def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
     pdf_html += f"""
                     <div style='margin-top:24px; text-align:center; color:#7f8c8d; font-size:12px;'>
                         Generated on {format_datetime(current_time)}. Do not reply to this email.<br>
-                        &copy; {format_datetime(current_time)[:4]} Automotive Center of Excellence. All rights reserved.<br>
+                        &copy; {datetime.datetime.now().year} Automotive Center of Excellence. All rights reserved.<br>
                         <a href='https://ace.ontariotechu.ca' style='color:#1a2a44; text-decoration:none;'>ace.ontariotechu.ca</a>
                     </div>
                 </td>

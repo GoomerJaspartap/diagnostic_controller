@@ -2,7 +2,7 @@ flask
 psycopg2-binary
 werkzeug
 python-dotenv
-pymodbus
+pymodbus==3.3.2
 xhtml2pdf
 twilio
 paho-mqtt==1.6.1 
