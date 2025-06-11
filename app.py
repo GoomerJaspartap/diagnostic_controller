@@ -59,7 +59,7 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS diagnostic_codes (
             id SERIAL PRIMARY KEY,
-            code VARCHAR(255),
+            code VARCHAR(255) UNIQUE,
             description TEXT,
             type VARCHAR(255),
             state VARCHAR(255),
@@ -90,6 +90,12 @@ def init_db():
             last_read_time TIMESTAMP
         )
     ''')
+    
+    # Ensure code is unique if table already exists
+    try:
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS unique_code_idx ON diagnostic_codes (code)')
+    except Exception:
+        pass
     
     c.execute('''
         CREATE TABLE IF NOT EXISTS logs (
@@ -520,26 +526,31 @@ def edit_diagnostic_code(code_id):
         if not all([code, description, type, data_source_type, upper_limit, lower_limit]):
             flash('All required fields must be filled.', 'danger')
         else:
-            try:
-                c.execute('''UPDATE diagnostic_codes SET 
-                    code=%s, description=%s, type=%s, data_source_type=%s,
-                    modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
-                    modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
-                    modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
-                    mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
-                    mqtt_password=%s, mqtt_qos=%s, upper_limit=%s, lower_limit=%s, enabled=%s
-                    WHERE id=%s''',
-                    (code, description, type, data_source_type,
-                    modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
-                    modbus_register_address, modbus_data_type, modbus_byte_order,
-                    modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-                    mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
-                    mqtt_password, mqtt_qos, upper_limit, lower_limit, enabled, code_id))
-                conn.commit()
-                flash('Diagnostic code updated successfully!', 'success')
-                return redirect(url_for('diagnostic_codes'))
-            except psycopg2.IntegrityError:
+            # Check for uniqueness of code (excluding current record)
+            c.execute('SELECT id FROM diagnostic_codes WHERE code = %s AND id != %s', (code, code_id))
+            if c.fetchone():
                 flash('Code already exists.', 'danger')
+            else:
+                try:
+                    c.execute('''UPDATE diagnostic_codes SET 
+                        code=%s, description=%s, type=%s, data_source_type=%s,
+                        modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
+                        modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
+                        modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
+                        mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
+                        mqtt_password=%s, mqtt_qos=%s, upper_limit=%s, lower_limit=%s, enabled=%s
+                        WHERE id=%s''',
+                        (code, description, type, data_source_type,
+                        modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
+                        modbus_register_address, modbus_data_type, modbus_byte_order,
+                        modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
+                        mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
+                        mqtt_password, mqtt_qos, upper_limit, lower_limit, enabled, code_id))
+                    conn.commit()
+                    flash('Diagnostic code updated successfully!', 'success')
+                    return redirect(url_for('diagnostic_codes'))
+                except psycopg2.IntegrityError:
+                    flash('Code already exists.', 'danger')
     
     c.execute('SELECT * FROM diagnostic_codes WHERE id=%s', (code_id,))
     code = c.fetchone()
@@ -737,11 +748,11 @@ def trigger_read_now():
     try:
         # Import here to avoid circular imports
         from read_modbus_data import main as read_modbus_main
-        from read_mqtt_data import main as read_mqtt_main
+        
         
         # Run both Modbus and MQTT reads
         read_modbus_main()
-        read_mqtt_main()
+        
         
         return jsonify({
             'success': True,
@@ -851,10 +862,13 @@ def duplicate_diagnostic_code(code_id):
     try:
         # Get the original code
         c.execute('''
-            SELECT code, description, type, modbus_ip, modbus_port, modbus_unit_id,
+            SELECT code, description, type, data_source_type,
+                   modbus_ip, modbus_port, modbus_unit_id,
                    modbus_register_type, modbus_register_address, modbus_data_type,
                    modbus_byte_order, modbus_scaling, modbus_units, modbus_offset,
-                   modbus_function_code, upper_limit, lower_limit
+                   modbus_function_code, mqtt_broker, mqtt_port, mqtt_topic,
+                   mqtt_username, mqtt_password, mqtt_qos,
+                   upper_limit, lower_limit
             FROM diagnostic_codes 
             WHERE id = %s
         ''', (code_id,))
@@ -864,23 +878,33 @@ def duplicate_diagnostic_code(code_id):
             flash('Diagnostic code not found.', 'danger')
             return redirect(url_for('diagnostic_codes'))
         
-        # Create a new code with "_copy" suffix
-        new_code = original[0] + "_copy"
+        # Create a new code with a unique _copy suffix
+        base_code = original[0] + "_copy"
+        new_code = base_code
+        counter = 2
+        while True:
+            c.execute('SELECT 1 FROM diagnostic_codes WHERE code = %s', (new_code,))
+            if not c.fetchone():
+                break
+            new_code = f"{base_code}{counter}"
+            counter += 1
         new_description = original[1] + " (Copy)"
         
         # Insert the duplicated code
         c.execute('''
             INSERT INTO diagnostic_codes 
-            (code, description, type, state, last_failure, history_count,
+            (code, description, type, data_source_type, state, last_failure, history_count,
              modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
              modbus_register_address, modbus_data_type, modbus_byte_order,
              modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
+             mqtt_broker, mqtt_port, mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
              upper_limit, lower_limit, enabled)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (new_code, new_description, original[2], 'No Status', '', 0,
-              original[3], original[4], original[5], original[6], original[7],
-              original[8], original[9], original[10], original[11], original[12],
-              original[13], original[14], original[15], 1))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (new_code, new_description, original[2], original[3], 'No Status', '', 0,
+              original[4], original[5], original[6], original[7], original[8],
+              original[9], original[10], original[11], original[12], original[13],
+              original[14], original[15], original[16], original[17], original[18],
+              original[19], original[20], original[21], original[22], 1))
         
         conn.commit()
         flash('Diagnostic code duplicated successfully!', 'success')

@@ -43,15 +43,23 @@
     .btn-group-action {
         display: flex;
         gap: 5px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        min-width: 300px;
+        justify-content: flex-start;
     }
 
     .btn-group-action form {
         margin: 0;
+        white-space: nowrap;
     }
 
     .btn-group-action button {
         margin: 0;
+        white-space: nowrap;
+    }
+
+    .btn-group-action a {
+        white-space: nowrap;
     }
 </style>
 

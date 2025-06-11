@@ -154,14 +154,24 @@ def on_message(client, userdata, msg):
                 message = "Fault Detected"
                 current_time = format_datetime(datetime.now())
                 refresh_time = get_refresh_time()
-                send_alert(emails, phone_numbers, subject, message, [{
-                    'code': diagnostic[1],
-                    'description': diagnostic[2],
-                    'state': status,
-                    'last_failure': now_str,
-                    'history_count': 1,
-                    'type': diagnostic[3]
-                }], current_time, refresh_time)
+                # Fetch latest diagnostic details for accurate alert data
+                c.execute('''
+                    SELECT code, description, type, state, current_value, last_read_time, last_failure, history_count
+                    FROM diagnostic_codes WHERE id = %s
+                ''', (diagnostic[0],))
+                row = c.fetchone()
+                if row:
+                    alert_data = [{
+                        'code': row[0],
+                        'description': row[1],
+                        'type': row[2],
+                        'state': row[3],
+                        'value': row[4],
+                        'last_read_time': row[5],
+                        'last_failure': row[6],
+                        'history_count': row[7]
+                    }]
+                    send_alert(emails, phone_numbers, subject, message, alert_data, current_time, refresh_time)
             else:
                 c.execute('''
                     UPDATE diagnostic_codes 

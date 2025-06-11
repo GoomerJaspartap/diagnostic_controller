@@ -212,19 +212,26 @@ def get_contacts():
     return emails, phone_numbers
 
 def get_diagnostic_details(code):
+    """Get diagnostic details for alerts"""
     conn = init_db()
     c = conn.cursor()
-    c.execute('SELECT code, description, state, last_failure, history_count, type FROM diagnostic_codes WHERE code = %s AND enabled = 1', (code,))
+    c.execute('''
+        SELECT id, code, description, type, state, current_value, last_read_time, last_failure, history_count 
+        FROM diagnostic_codes 
+        WHERE code = %s
+    ''', (code,))
     row = c.fetchone()
     conn.close()
     if row:
         return {
-            'code': row[0],
-            'description': row[1],
-            'state': row[2],
-            'last_failure': row[3],
-            'history_count': row[4],
-            'type': row[5]
+            'code': row[1],
+            'description': row[2],
+            'type': row[3],
+            'state': row[4],
+            'value': row[5],
+            'last_read_time': row[6],
+            'last_failure': row[7],
+            'history_count': row[8]
         }
     return None
 
