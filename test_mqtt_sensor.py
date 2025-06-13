@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 
 # MQTT Configuration
-BROKER = "10.150.3.228"
+BROKER = "10.150.0.234"
 PORT = 1883
 TOPIC = "sensors/temperature"  # This should match the topic in your diagnostic code
 QOS = 0
