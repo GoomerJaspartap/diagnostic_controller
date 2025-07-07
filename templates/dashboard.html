@@ -658,11 +658,13 @@ function createGraph(data, modal) {
             name: 'Lower Threshold',
             line: {color: 'orange', width: 1, dash: 'dash'}
         },
+        // New: add a line connecting all actual data points
         {
             x: actualTimes,
             y: actualValues,
-            mode: 'markers',
-            name: 'Actual',
+            mode: 'lines+markers',
+            name: 'Actual (Line)',
+            line: {color: '#888', width: 2, dash: 'solid'},
             marker: {
                 color: actualColors,
                 size: 10,
@@ -671,6 +673,22 @@ function createGraph(data, modal) {
             },
             text: actualTooltips,
             hoverinfo: 'text'
+        },
+        // Keep the original markers for color distinction
+        {
+            x: actualTimes,
+            y: actualValues,
+            mode: 'markers',
+            name: 'Actual (Points)',
+            marker: {
+                color: actualColors,
+                size: 10,
+                symbol: 'circle',
+                line: {width: 1, color: '#333'}
+            },
+            text: actualTooltips,
+            hoverinfo: 'text',
+            showlegend: false
         }
     ];
     // Add 'Now' line if now is within window
