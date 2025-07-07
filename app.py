@@ -6,6 +6,12 @@ import re
 from functools import wraps
 from dotenv import load_dotenv
 import datetime
+from datetime import datetime
+from datetime import timedelta
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from pytz import timezone as ZoneInfo
 
 # Load environment variables
 load_dotenv()
@@ -37,6 +43,16 @@ def init_db():
     ''')
     
     c.execute('''
+        CREATE TABLE IF NOT EXISTS rooms (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            refresh_time INTEGER
+        )
+    ''')
+    
+    c.execute('''
         CREATE TABLE IF NOT EXISTS contacts (
             id SERIAL PRIMARY KEY,
             fullname VARCHAR(255),
@@ -50,7 +66,6 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS app_settings (
             id SERIAL PRIMARY KEY,
-            refresh_time INTEGER DEFAULT 5,
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_error_event TEXT
         )
@@ -65,6 +80,7 @@ def init_db():
             state VARCHAR(255),
             last_failure TEXT,
             history_count INTEGER,
+            room_id INTEGER REFERENCES rooms(id),
             data_source_type VARCHAR(50) DEFAULT 'modbus',
             modbus_ip VARCHAR(255),
             modbus_port INTEGER,
@@ -87,7 +103,12 @@ def init_db():
             lower_limit REAL,
             enabled INTEGER,
             current_value REAL,
-            last_read_time TIMESTAMP
+            last_read_time TIMESTAMP,
+            start_value REAL,
+            target_value REAL,
+            threshold REAL,
+            time_to_achieve INTEGER,
+            enabled_at TIMESTAMP
         )
     ''')
     
@@ -111,6 +132,16 @@ def init_db():
         )
     ''')
     
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS data_logs (
+            id SERIAL PRIMARY KEY,
+            code VARCHAR(255),
+            value REAL,
+            data_source VARCHAR(50),
+            event_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     # Check if default user exists
     c.execute('SELECT 1 FROM users WHERE username = %s', ('user',))
     if not c.fetchone():
@@ -120,7 +151,7 @@ def init_db():
     # Check if default refresh time exists
     c.execute('SELECT 1 FROM app_settings WHERE id = 1')
     if not c.fetchone():
-        c.execute('INSERT INTO app_settings (id, refresh_time, last_error_event) VALUES (1, 5, NULL)')
+        c.execute('INSERT INTO app_settings (id, last_error_event) VALUES (1, NULL)')
     
     conn.commit()
     conn.close()
@@ -170,11 +201,31 @@ def dashboard():
     c.execute('SELECT name FROM users WHERE username=%s', (username,))
     row = c.fetchone()
     name = row[0] if row else username
-    # Fetch enabled diagnostic codes for temperature and humidity
-    c.execute('SELECT code, description, state, last_failure, history_count, type FROM diagnostic_codes WHERE enabled=1')
+    
+    # Fetch enabled diagnostic codes with room information
+    c.execute('''
+        SELECT dc.code, dc.description, dc.state, dc.last_failure, dc.history_count, 
+               dc.type, dc.modbus_units, dc.current_value, dc.last_read_time,
+               r.name as room_name, r.id as room_id
+        FROM diagnostic_codes dc
+        LEFT JOIN rooms r ON dc.room_id = r.id
+        WHERE dc.enabled=1
+        ORDER BY r.name NULLS FIRST, dc.type, dc.code
+    ''')
     all_codes = c.fetchall()
-    temp_codes = [code for code in all_codes if code[5] == 'Temperature']
-    humidity_codes = [code for code in all_codes if code[5] == 'Humidity']
+    
+    # Group codes by room
+    codes_by_room = {}
+    for code in all_codes:
+        room_name = code[9] if code[9] else 'Unassigned'
+        if room_name not in codes_by_room:
+            codes_by_room[room_name] = {'temp': [], 'humidity': [], 'room_id': code[10]}
+        
+        if code[5] == 'Temperature':
+            codes_by_room[room_name]['temp'].append(code)
+        elif code[5] == 'Humidity':
+            codes_by_room[room_name]['humidity'].append(code)
+    
     # Notification center: codes with state 'No Status' or 'Fail'
     notifications = [code for code in all_codes if code[2] in ('No Status', 'Fail')]
     conn.close()
@@ -184,8 +235,7 @@ def dashboard():
     
     return render_template('dashboard.html', 
                          user=name, 
-                         temp_codes=temp_codes, 
-                         humidity_codes=humidity_codes, 
+                         codes_by_room=codes_by_room,
                          notifications=notifications,
                          total_contacts=total_contacts,
                          email_enabled=email_enabled,
@@ -364,60 +414,49 @@ def diagnostic_codes():
         return redirect(url_for('login'))
     
     search_query = request.args.get('search', '').strip()
-    
     conn = psycopg2.connect(**DB_CONFIG)
     c = conn.cursor()
     
     if search_query:
-        # Create search pattern for SQL LIKE
-        search_pattern = f'%{search_query}%'
-        
-        # Search in temperature codes
         c.execute('''
-            SELECT * FROM diagnostic_codes 
-            WHERE type = 'Temperature'
-            AND (
-                code ILIKE %s OR
-                description ILIKE %s OR
-                state ILIKE %s OR
-                last_failure ILIKE %s OR
-                modbus_ip ILIKE %s OR
-                modbus_register_type ILIKE %s OR
-                modbus_data_type ILIKE %s OR
-                modbus_byte_order ILIKE %s OR
-                modbus_units ILIKE %s
-            )
-        ''', (search_pattern,) * 9)
-        temp_codes = c.fetchall()
+            SELECT dc.*, r.name as room_name 
+            FROM diagnostic_codes dc
+            LEFT JOIN rooms r ON dc.room_id = r.id
+            WHERE dc.code ILIKE %s OR dc.description ILIKE %s OR r.name ILIKE %s
+            ORDER BY r.name NULLS FIRST, dc.code
+        ''', (f'%{search_query}%', f'%{search_query}%', f'%{search_query}%'))
+        all_codes = c.fetchall()
         
-        # Search in humidity codes
-        c.execute('''
-            SELECT * FROM diagnostic_codes 
-            WHERE type = 'Humidity'
-            AND (
-                code ILIKE %s OR
-                description ILIKE %s OR
-                state ILIKE %s OR
-                last_failure ILIKE %s OR
-                modbus_ip ILIKE %s OR
-                modbus_register_type ILIKE %s OR
-                modbus_data_type ILIKE %s OR
-                modbus_byte_order ILIKE %s OR
-                modbus_units ILIKE %s
-            )
-        ''', (search_pattern,) * 9)
-        humidity_codes = c.fetchall()
+        # Group by room
+        codes_by_room = {}
+        for code in all_codes:
+            room_name = code[-1] if code[-1] else 'Unassigned'
+            if room_name not in codes_by_room:
+                codes_by_room[room_name] = []
+            codes_by_room[room_name].append(code)
     else:
-        # If no search query, get all codes
-        c.execute('SELECT * FROM diagnostic_codes WHERE type = %s', ('Temperature',))
-        temp_codes = c.fetchall()
-        c.execute('SELECT * FROM diagnostic_codes WHERE type = %s', ('Humidity',))
-        humidity_codes = c.fetchall()
+        # Get all codes grouped by room
+        c.execute('''
+            SELECT dc.*, r.name as room_name 
+            FROM diagnostic_codes dc
+            LEFT JOIN rooms r ON dc.room_id = r.id
+            ORDER BY r.name NULLS FIRST, dc.code
+        ''')
+        all_codes = c.fetchall()
+        
+        # Group by room
+        codes_by_room = {}
+        for code in all_codes:
+            room_name = code[-1] if code[-1] else 'Unassigned'
+            if room_name not in codes_by_room:
+                codes_by_room[room_name] = []
+            codes_by_room[room_name].append(code)
     
     conn.close()
+    rooms = get_rooms()
     return render_template('diagnostic_codes.html', 
-                         temp_codes=temp_codes, 
-                         humidity_codes=humidity_codes,
+                         codes_by_room=codes_by_room,
+                         rooms=rooms,
                          search_query=search_query)
 
 @app.route('/add_diagnostic_code', methods=['GET', 'POST'])
@@ -429,10 +468,7 @@ def add_diagnostic_code():
         description = request.form['description']
         type = request.form['type']
         data_source_type = request.form['data_source_type']
-        
-        # Get common fields
-        upper_limit = request.form['upper_limit']
-        lower_limit = request.form['lower_limit']
+        room_id = request.form.get('room_id') or None
         
         # Get Modbus fields
         modbus_ip = request.form.get('modbus_ip')
@@ -455,26 +491,26 @@ def add_diagnostic_code():
         mqtt_password = request.form.get('mqtt_password')
         mqtt_qos = request.form.get('mqtt_qos') or 0
         
-        if not all([code, description, type, data_source_type, upper_limit, lower_limit]):
+        if not all([code, description, type, data_source_type]):
             flash('All required fields must be filled.', 'danger')
         else:
             conn = psycopg2.connect(**DB_CONFIG)
             c = conn.cursor()
             try:
                 c.execute('''INSERT INTO diagnostic_codes 
-                    (code, description, type, state, last_failure, history_count,
+                    (code, description, type, state, last_failure, history_count, room_id,
                     data_source_type, modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
                     modbus_register_address, modbus_data_type, modbus_byte_order,
                     modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
                     mqtt_broker, mqtt_port, mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
-                    upper_limit, lower_limit, enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
-                    (code, description, type, 'No Status', '', 0,
+                    enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                    (code, description, type, 'No Status', '', 0, room_id,
                     data_source_type, modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
                     modbus_register_address, modbus_data_type, modbus_byte_order,
                     modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
                     mqtt_broker, mqtt_port, mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
-                    upper_limit, lower_limit, 1))
+                    0))
                 conn.commit()
                 flash('Diagnostic code added successfully!', 'success')
                 return redirect(url_for('diagnostic_codes'))
@@ -482,7 +518,9 @@ def add_diagnostic_code():
                 flash('Code already exists.', 'danger')
             finally:
                 conn.close()
-    return render_template('add_diagnostic_code.html')
+    
+    rooms = get_rooms()
+    return render_template('add_diagnostic_code.html', rooms=rooms)
 
 @app.route('/edit_diagnostic_code/<int:code_id>', methods=['GET', 'POST'])
 def edit_diagnostic_code(code_id):
@@ -496,11 +534,23 @@ def edit_diagnostic_code(code_id):
         description = request.form['description']
         type = request.form['type']
         data_source_type = request.form['data_source_type']
+        room_id = request.form.get('room_id') or None
         
-        # Get common fields
-        upper_limit = request.form['upper_limit']
-        lower_limit = request.form['lower_limit']
         enabled = 1 if request.form.get('enabled') == 'on' else 0
+        
+        # Get current enabled status to check if we're enabling for the first time
+        c.execute('SELECT enabled FROM diagnostic_codes WHERE id = %s', (code_id,))
+        current_enabled = c.fetchone()
+        was_enabled = current_enabled[0] if current_enabled else False
+        
+        # Set enabled_at timestamp if we're enabling for the first time
+        enabled_at = None
+        if enabled and not was_enabled:
+            try:
+                enabled_at = datetime.now(ZoneInfo('America/New_York'))
+            except Exception:
+                import pytz
+                enabled_at = datetime.now(pytz.timezone('America/New_York'))
         
         # Get Modbus fields
         modbus_ip = request.form.get('modbus_ip')
@@ -523,7 +573,7 @@ def edit_diagnostic_code(code_id):
         mqtt_password = request.form.get('mqtt_password')
         mqtt_qos = request.form.get('mqtt_qos') or 0
         
-        if not all([code, description, type, data_source_type, upper_limit, lower_limit]):
+        if not all([code, description, type, data_source_type]):
             flash('All required fields must be filled.', 'danger')
         else:
             # Check for uniqueness of code (excluding current record)
@@ -532,20 +582,38 @@ def edit_diagnostic_code(code_id):
                 flash('Code already exists.', 'danger')
             else:
                 try:
-                    c.execute('''UPDATE diagnostic_codes SET 
-                        code=%s, description=%s, type=%s, data_source_type=%s,
-                        modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
-                        modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
-                        modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
-                        mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
-                        mqtt_password=%s, mqtt_qos=%s, upper_limit=%s, lower_limit=%s, enabled=%s
-                        WHERE id=%s''',
-                        (code, description, type, data_source_type,
-                        modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
-                        modbus_register_address, modbus_data_type, modbus_byte_order,
-                        modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-                        mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
-                        mqtt_password, mqtt_qos, upper_limit, lower_limit, enabled, code_id))
+                    if enabled_at:
+                        # Update with enabled_at timestamp
+                        c.execute('''UPDATE diagnostic_codes SET 
+                            code=%s, description=%s, type=%s, data_source_type=%s, room_id=%s,
+                            modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
+                            modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
+                            modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
+                            mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
+                            mqtt_password=%s, mqtt_qos=%s, enabled=%s, enabled_at=%s
+                            WHERE id=%s''',
+                            (code, description, type, data_source_type, room_id,
+                            modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
+                            modbus_register_address, modbus_data_type, modbus_byte_order,
+                            modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
+                            mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
+                            mqtt_password, mqtt_qos, enabled, enabled_at, code_id))
+                    else:
+                        # Update without changing enabled_at
+                        c.execute('''UPDATE diagnostic_codes SET 
+                            code=%s, description=%s, type=%s, data_source_type=%s, room_id=%s,
+                            modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
+                            modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
+                            modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
+                            mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
+                            mqtt_password=%s, mqtt_qos=%s, enabled=%s
+                            WHERE id=%s''',
+                            (code, description, type, data_source_type, room_id,
+                            modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
+                            modbus_register_address, modbus_data_type, modbus_byte_order,
+                            modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
+                            mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
+                            mqtt_password, mqtt_qos, enabled, code_id))
                     conn.commit()
                     flash('Diagnostic code updated successfully!', 'success')
                     return redirect(url_for('diagnostic_codes'))
@@ -560,7 +628,8 @@ def edit_diagnostic_code(code_id):
         flash('Diagnostic code not found.', 'danger')
         return redirect(url_for('diagnostic_codes'))
         
-    return render_template('edit_diagnostic_code.html', code=code)
+    rooms = get_rooms()
+    return render_template('edit_diagnostic_code.html', code=code, rooms=rooms)
 
 @app.route('/delete_diagnostic_code/<int:code_id>', methods=['POST'])
 def delete_diagnostic_code(code_id):
@@ -578,14 +647,45 @@ def delete_diagnostic_code(code_id):
 def toggle_diagnostic_code(code_id):
     if 'user' not in session:
         return redirect(url_for('login'))
+    
+    # Check if this is a request to enable or disable
+    action = request.form.get('action', 'toggle')
+    
     conn = psycopg2.connect(**DB_CONFIG)
     c = conn.cursor()
-    c.execute('SELECT enabled FROM diagnostic_codes WHERE id=%s', (code_id,))
-    current = c.fetchone()
-    if current:
-        new_status = 0 if current[0] else 1
-        c.execute('UPDATE diagnostic_codes SET enabled=%s WHERE id=%s', (new_status, code_id))
+    
+    if action == 'enable':
+        # This will be handled by the frontend popup and API call
+        # Just redirect back to the diagnostic codes page
+        conn.close()
+        return redirect(url_for('diagnostic_codes'))
+    elif action == 'disable':
+        # Clear diagnostic parameters and disable the code
+        c.execute('''
+            UPDATE diagnostic_codes 
+            SET start_value = NULL, target_value = NULL, threshold = NULL, 
+                time_to_achieve = NULL, enabled = 0, enabled_at = NULL
+            WHERE id = %s
+        ''', (code_id,))
         conn.commit()
+        flash('Diagnostic code disabled and parameters cleared.', 'info')
+    else:
+        # Legacy toggle behavior - check current status
+        c.execute('SELECT enabled FROM diagnostic_codes WHERE id=%s', (code_id,))
+        current = c.fetchone()
+        if current:
+            if current[0]:  # Currently enabled, so disable
+                c.execute('''
+                    UPDATE diagnostic_codes 
+                    SET start_value = NULL, target_value = NULL, threshold = NULL, 
+                        time_to_achieve = NULL, enabled = 0, enabled_at = NULL
+                    WHERE id = %s
+                ''', (code_id,))
+                flash('Diagnostic code disabled and parameters cleared.', 'info')
+            else:  # Currently disabled, redirect to enable via popup
+                conn.close()
+                return redirect(url_for('diagnostic_codes'))
+    
     conn.close()
     return redirect(url_for('diagnostic_codes'))
 
@@ -664,18 +764,43 @@ def login_required(f):
 @login_required
 def get_diagnostics():
     try:
-        # Get humidity codes
-        humidity_codes = get_humidity_codes()
-        # Get temperature codes
-        temp_codes = get_temp_codes()
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Fetch enabled diagnostic codes with room information
+        c.execute('''
+            SELECT dc.code, dc.description, dc.state, dc.last_failure, dc.history_count, 
+                   dc.type, dc.modbus_units, dc.current_value, dc.last_read_time,
+                   r.name as room_name, r.id as room_id
+            FROM diagnostic_codes dc
+            LEFT JOIN rooms r ON dc.room_id = r.id
+            WHERE dc.enabled=1
+            ORDER BY r.name NULLS FIRST, dc.type, dc.code
+        ''')
+        all_codes = c.fetchall()
+        
+        # Group codes by room
+        codes_by_room = {}
+        for code in all_codes:
+            room_name = code[9] if code[9] else 'Unassigned'
+            if room_name not in codes_by_room:
+                codes_by_room[room_name] = {'temp': [], 'humidity': [], 'room_id': code[10]}
+            
+            if code[5] == 'Temperature':
+                codes_by_room[room_name]['temp'].append(code)
+            elif code[5] == 'Humidity':
+                codes_by_room[room_name]['humidity'].append(code)
+        
         # Get notifications
-        notifications = get_notifications()
+        notifications = [code for code in all_codes if code[2] in ('No Status', 'Fail')]
+        
+        conn.close()
+        
         # Get contact statistics
         total_contacts, email_enabled, sms_enabled = get_contact_stats()
         
         return jsonify({
-            'humidity_codes': humidity_codes,
-            'temp_codes': temp_codes,
+            'codes_by_room': codes_by_room,
             'notifications': notifications,
             'contact_stats': {
                 'total': total_contacts,
@@ -705,43 +830,6 @@ def reset_history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/refresh_time', methods=['GET', 'POST'])
-@login_required
-def manage_refresh_time():
-    if 'user' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    conn = psycopg2.connect(**DB_CONFIG)
-    c = conn.cursor()
-    
-    if request.method == 'GET':
-        c.execute('SELECT refresh_time, last_updated FROM app_settings WHERE id = 1')
-        result = c.fetchone()
-        conn.close()
-        if result:
-            return jsonify({
-                'refresh_time': result[0],
-                'last_updated': result[1]
-            })
-        return jsonify({'error': 'Settings not found'}), 404
-    
-    elif request.method == 'POST':
-        try:
-            new_time = int(request.json.get('refresh_time', 5))
-            if new_time < 1:
-                return jsonify({'error': 'Refresh time must be at least 1 second'}), 400
-            
-            c.execute('''
-                UPDATE app_settings 
-                SET refresh_time = %s, last_updated = CURRENT_TIMESTAMP 
-                WHERE id = 1
-            ''', (new_time,))
-            conn.commit()
-            conn.close()
-            return jsonify({'success': True, 'refresh_time': new_time})
-        except ValueError:
-            return jsonify({'error': 'Invalid refresh time value'}), 400
-
 @app.route('/api/read_now', methods=['POST'])
 @login_required
 def trigger_read_now():
@@ -749,14 +837,30 @@ def trigger_read_now():
         # Import here to avoid circular imports
         from read_modbus_data import main as read_modbus_main
         
+        # Get room_id from request data
+        data = request.get_json()
+        room_id = data.get('room_id') if data else None
         
-        # Run both Modbus and MQTT reads
-        read_modbus_main()
+        # Convert room_id to int if it's not None and not 'all'
+        if room_id and room_id != 'all':
+            try:
+                room_id = int(room_id)
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid room_id'
+                }), 400
         
+        # If room_id is 'all' or None, set it to None to read all rooms
+        if room_id == 'all':
+            room_id = None
+        
+        # Run Modbus read for specific room or all rooms
+        read_modbus_main(room_id)
         
         return jsonify({
             'success': True,
-            'message': 'Data read triggered successfully'
+            'message': f'Data read triggered successfully for {"all rooms" if room_id is None else f"room {room_id}"}'
         })
     except Exception as e:
         return jsonify({
@@ -764,67 +868,195 @@ def trigger_read_now():
             'error': str(e)
         }), 500
 
-@app.route('/logs')
+@app.route('/api/read_live_modbus/<int:code_id>', methods=['POST'])
 @login_required
-def logs():
-    return render_template('logs.html')
+def read_live_modbus_value(code_id):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Get the diagnostic code configuration
+        c.execute('''
+            SELECT data_source_type, modbus_ip, modbus_port, modbus_unit_id, 
+                   modbus_register_type, modbus_register_address, modbus_data_type,
+                   modbus_byte_order, modbus_scaling, modbus_units, modbus_offset,
+                   modbus_function_code
+            FROM diagnostic_codes WHERE id = %s
+        ''', (code_id,))
+        
+        code_config = c.fetchone()
+        conn.close()
+        
+        if not code_config:
+            return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
+        
+        if code_config[0] != 'modbus':
+            return jsonify({'success': False, 'error': 'This diagnostic code is not configured for Modbus'}), 400
+        
+        # Import and use the modbus reading function
+        from read_modbus_data import read_single_modbus_value
+        
+        try:
+            value = read_single_modbus_value(
+                ip=code_config[1],
+                port=code_config[2],
+                unit_id=code_config[3],
+                register_type=code_config[4],
+                register_address=code_config[5],
+                data_type=code_config[6],
+                byte_order=code_config[7],
+                scaling=code_config[8],
+                units=code_config[9],
+                offset=code_config[10],
+                function_code=code_config[11]
+            )
+            
+            return jsonify({
+                'success': True,
+                'value': value,
+                'units': code_config[9] or ''
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to read Modbus value: {str(e)}'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/update_diagnostic_params/<int:code_id>', methods=['POST'])
+@login_required
+def update_diagnostic_params(code_id):
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        start_value = data.get('start_value')
+        target_value = data.get('target_value')
+        threshold = data.get('threshold')
+        time_to_achieve = data.get('time_to_achieve')
+        if None in [start_value, target_value, threshold, time_to_achieve]:
+            return jsonify({'success': False, 'error': 'All parameters are required'}), 400
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        # Get current time in America/New_York timezone
+        try:
+            now_est = datetime.now(ZoneInfo('America/New_York'))
+        except Exception:
+            import pytz
+            now_est = datetime.now(pytz.timezone('America/New_York'))
+        # Update the diagnostic parameters and enable the code
+        c.execute('''
+            UPDATE diagnostic_codes 
+            SET start_value = %s, target_value = %s, threshold = %s, 
+                time_to_achieve = %s, enabled = 1, enabled_at = %s
+            WHERE id = %s
+        ''', (start_value, target_value, threshold, time_to_achieve, now_est, code_id))
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'success': True,
+            'message': 'Diagnostic parameters updated and code enabled successfully'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/clear_diagnostic_params/<int:code_id>', methods=['POST'])
+@login_required
+def clear_diagnostic_params(code_id):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Clear diagnostic parameters and disable the code
+        c.execute('''
+            UPDATE diagnostic_codes 
+            SET start_value = NULL, target_value = NULL, threshold = NULL, 
+                time_to_achieve = NULL, enabled = 0, enabled_at = NULL
+            WHERE id = %s
+        ''', (code_id,))
+        
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Diagnostic parameters cleared and code disabled successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/status_log')
+def status_log():
+    return render_template('status_log.html')
 
 def format_datetime(dt):
     if not dt:
         return ''
     if isinstance(dt, str):
         try:
-            dt = datetime.datetime.fromisoformat(dt)
+            dt = datetime.fromisoformat(dt)
         except Exception:
             return dt
     return dt.strftime('%d %B, %Y %H:%M:%S')
 
-@app.route('/api/logs')
-@login_required
-def api_logs():
-    code = request.args.get('code', '').strip()
-    state = request.args.get('state', '').strip()
-    dtype = request.args.get('type', '').strip()
-    start_date = request.args.get('start_date', '').strip()
-    end_date = request.args.get('end_date', '').strip()
+@app.route('/api/status_log')
+def api_status_log():
+    try:
+        code = request.args.get('code', '').strip()
+        state = request.args.get('state', '').strip()
+        dtype = request.args.get('type', '').strip()
+        start_date = request.args.get('start_date', '').strip()
+        end_date = request.args.get('end_date', '').strip()
 
-    query = 'SELECT code, description, state, last_failure, history_count, type, value, event_time FROM logs WHERE 1=1'
-    params = []
-    if code:
-        query += ' AND code ILIKE %s'
-        params.append(f'%{code}%')
-    if state:
-        query += ' AND state = %s'
-        params.append(state)
-    if dtype:
-        query += ' AND type = %s'
-        params.append(dtype)
-    if start_date:
-        query += ' AND event_time >= %s'
-        params.append(start_date)
-    if end_date:
-        query += ' AND event_time <= %s'
-        params.append(end_date)
-    query += ' ORDER BY event_time DESC LIMIT 1000'
+        query = 'SELECT code, description, state, last_failure, history_count, type, value, event_time FROM logs WHERE 1=1'
+        params = []
+        if code:
+            query += ' AND code ILIKE %s'
+            params.append(f'%{code}%')
+        if state:
+            query += ' AND state = %s'
+            params.append(state)
+        if dtype:
+            query += ' AND type = %s'
+            params.append(dtype)
+        if start_date:
+            query += ' AND event_time >= %s'
+            params.append(start_date)
+        if end_date:
+            query += ' AND event_time <= %s'
+            params.append(end_date)
+        query += ' ORDER BY event_time DESC LIMIT 1000'
 
-    conn = psycopg2.connect(**DB_CONFIG)
-    c = conn.cursor()
-    c.execute(query, tuple(params))
-    rows = c.fetchall()
-    conn.close()
-    logs = [
-        {
-            'code': r[0],
-            'description': r[1],
-            'state': r[2],
-            'last_failure': format_datetime(r[3]),
-            'history_count': r[4],
-            'type': r[5],
-            'value': r[6],
-            'event_time': format_datetime(r[7]) if r[7] else ''
-        } for r in rows
-    ]
-    return jsonify({'logs': logs})
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute(query, tuple(params))
+        rows = c.fetchall()
+        conn.close()
+        logs = [
+            {
+                'code': r[0],
+                'description': r[1],
+                'state': r[2],
+                'last_failure': format_datetime(r[3]),
+                'history_count': r[4],
+                'type': r[5],
+                'value': r[6],
+                'event_time': (r[7] - timedelta(hours=4)).strftime('%Y-%m-%dT%H:%M:%S') if r[7] else ''
+            } for r in rows
+        ]
+        return jsonify({'logs': logs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/toggle_all_contacts', methods=['POST'])
 def toggle_all_contacts():
@@ -855,31 +1087,27 @@ def toggle_all_contacts():
 def duplicate_diagnostic_code(code_id):
     if 'user' not in session:
         return redirect(url_for('login'))
-    
-    conn = psycopg2.connect(**DB_CONFIG)
-    c = conn.cursor()
-    
     try:
-        # Get the original code
-        c.execute('''
-            SELECT code, description, type, data_source_type,
-                   modbus_ip, modbus_port, modbus_unit_id,
-                   modbus_register_type, modbus_register_address, modbus_data_type,
-                   modbus_byte_order, modbus_scaling, modbus_units, modbus_offset,
-                   modbus_function_code, mqtt_broker, mqtt_port, mqtt_topic,
-                   mqtt_username, mqtt_password, mqtt_qos,
-                   upper_limit, lower_limit
-            FROM diagnostic_codes 
-            WHERE id = %s
-        ''', (code_id,))
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        # Fetch all columns except id
+        c.execute('SELECT * FROM diagnostic_codes WHERE id = %s', (code_id,))
         original = c.fetchone()
-        
         if not original:
             flash('Diagnostic code not found.', 'danger')
             return redirect(url_for('diagnostic_codes'))
-        
-        # Create a new code with a unique _copy suffix
-        base_code = original[0] + "_copy"
+        # Get column names
+        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'diagnostic_codes' ORDER BY ordinal_position")
+        columns = [row[0] for row in c.fetchall()]
+        # Remove id column
+        id_index = columns.index('id')
+        columns_wo_id = columns[:id_index] + columns[id_index+1:]
+        # Prepare new values
+        original = list(original)
+        # Remove id value
+        del original[id_index]
+        # Update code and description
+        base_code = original[columns_wo_id.index('code')] + "_copy"
         new_code = base_code
         counter = 2
         while True:
@@ -888,24 +1116,18 @@ def duplicate_diagnostic_code(code_id):
                 break
             new_code = f"{base_code}{counter}"
             counter += 1
-        new_description = original[1] + " (Copy)"
-        
-        # Insert the duplicated code
-        c.execute('''
-            INSERT INTO diagnostic_codes 
-            (code, description, type, data_source_type, state, last_failure, history_count,
-             modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
-             modbus_register_address, modbus_data_type, modbus_byte_order,
-             modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-             mqtt_broker, mqtt_port, mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
-             upper_limit, lower_limit, enabled)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (new_code, new_description, original[2], original[3], 'No Status', '', 0,
-              original[4], original[5], original[6], original[7], original[8],
-              original[9], original[10], original[11], original[12], original[13],
-              original[14], original[15], original[16], original[17], original[18],
-              original[19], original[20], original[21], original[22], 1))
-        
+        original[columns_wo_id.index('code')] = new_code
+        original[columns_wo_id.index('description')] += " (Copy)"
+        # Set state to 'No Status', last_failure to '', history_count to 0
+        if 'state' in columns_wo_id:
+            original[columns_wo_id.index('state')] = 'No Status'
+        if 'last_failure' in columns_wo_id:
+            original[columns_wo_id.index('last_failure')] = ''
+        if 'history_count' in columns_wo_id:
+            original[columns_wo_id.index('history_count')] = 0
+        # Insert new row
+        placeholders = ', '.join(['%s'] * len(columns_wo_id))
+        c.execute(f'''INSERT INTO diagnostic_codes ({', '.join(columns_wo_id)}) VALUES ({placeholders})''', tuple(original))
         conn.commit()
         flash('Diagnostic code duplicated successfully!', 'success')
     except psycopg2.IntegrityError:
@@ -914,7 +1136,6 @@ def duplicate_diagnostic_code(code_id):
         flash(f'Error duplicating code: {str(e)}', 'danger')
     finally:
         conn.close()
-    
     return redirect(url_for('diagnostic_codes'))
 
 @app.route('/reset_diagnostic_code/<int:code_id>', methods=['POST'])
@@ -944,9 +1165,210 @@ def api_last_error_event():
     conn = psycopg2.connect(**DB_CONFIG)
     c = conn.cursor()
     c.execute('SELECT last_error_event FROM app_settings WHERE id = 1')
-    row = c.fetchone()
+    result = c.fetchone()
     conn.close()
-    return jsonify({'last_error_event': row[0] if row else None})
+    return jsonify({'last_error_event': result[0] if result else None})
+
+# --- Room Management Routes ---
+@app.route('/rooms')
+@login_required
+def rooms():
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    c.execute('SELECT id, name, description, created_at, refresh_time FROM rooms ORDER BY name')
+    rooms = c.fetchall()
+    conn.close()
+    return render_template('rooms.html', rooms=rooms)
+
+@app.route('/add_room', methods=['GET', 'POST'])
+@login_required
+def add_room():
+    if request.method == 'POST':
+        name = request.form['name'].strip()
+        description = request.form['description'].strip()
+        refresh_time = request.form.get('refresh_time')
+        refresh_time = int(refresh_time) if refresh_time else None
+        if not name:
+            flash('Chamber name is required', 'danger')
+            return render_template('add_room.html')
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        try:
+            c.execute('INSERT INTO rooms (name, description, refresh_time) VALUES (%s, %s, %s)', (name, description, refresh_time))
+            conn.commit()
+            flash('Chamber added successfully', 'success')
+            return redirect(url_for('rooms'))
+        except psycopg2.IntegrityError:
+            flash('Chamber name already exists', 'danger')
+        except Exception as e:
+            flash(f'Error adding chamber: {str(e)}', 'danger')
+        finally:
+            conn.close()
+    return render_template('add_room.html')
+
+@app.route('/edit_room/<int:room_id>', methods=['GET', 'POST'])
+@login_required
+def edit_room(room_id):
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    if request.method == 'POST':
+        name = request.form['name'].strip()
+        description = request.form['description'].strip()
+        refresh_time = request.form.get('refresh_time')
+        refresh_time = int(refresh_time) if refresh_time else None
+        if not name:
+            flash('Chamber name is required', 'danger')
+            c.execute('SELECT name, description, refresh_time FROM rooms WHERE id = %s', (room_id,))
+            room = c.fetchone()
+            conn.close()
+            return render_template('edit_room.html', room=room, room_id=room_id)
+        try:
+            c.execute('UPDATE rooms SET name = %s, description = %s, refresh_time = %s WHERE id = %s', (name, description, refresh_time, room_id))
+            conn.commit()
+            flash('Chamber updated successfully', 'success')
+            return redirect(url_for('rooms'))
+        except psycopg2.IntegrityError:
+            flash('Chamber name already exists', 'danger')
+        except Exception as e:
+            flash(f'Error updating chamber: {str(e)}', 'danger')
+        finally:
+            conn.close()
+    
+    c.execute('SELECT name, description, refresh_time FROM rooms WHERE id = %s', (room_id,))
+    room = c.fetchone()
+    conn.close()
+    
+    if not room:
+        flash('Chamber not found', 'danger')
+        return redirect(url_for('rooms'))
+    
+    return render_template('edit_room.html', room=room, room_id=room_id)
+
+@app.route('/delete_room/<int:room_id>', methods=['POST'])
+@login_required
+def delete_room(room_id):
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    # Check if room has associated diagnostic codes
+    c.execute('SELECT COUNT(*) FROM diagnostic_codes WHERE room_id = %s', (room_id,))
+    count = c.fetchone()[0]
+    
+    if count > 0:
+        flash(f'Cannot delete room: {count} diagnostic code(s) are associated with this room', 'danger')
+        conn.close()
+        return redirect(url_for('rooms'))
+    
+    try:
+        c.execute('DELETE FROM rooms WHERE id = %s', (room_id,))
+        conn.commit()
+        flash('Room deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting room: {str(e)}', 'danger')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('rooms'))
+
+# --- Helper function to get rooms for dropdowns ---
+def get_rooms():
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    c.execute('SELECT id, name, refresh_time FROM rooms ORDER BY name')
+    rooms = c.fetchall()
+    conn.close()
+    return rooms
+
+@app.route('/data_log')
+def data_log():
+    return render_template('data_log.html')
+
+@app.route('/api/data_log')
+def api_data_log():
+    code = request.args.get('code', '').strip()
+    data_source = request.args.get('data_source', '').strip()
+    query = 'SELECT code, value, data_source, event_time FROM data_logs WHERE 1=1'
+    params = []
+    if code:
+        query += ' AND code = %s'
+        params.append(code)
+    if data_source:
+        query += ' AND data_source = %s'
+        params.append(data_source)
+    query += ' ORDER BY event_time DESC LIMIT 500'
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    c.execute(query, tuple(params))
+    logs = [
+        {
+            'code': row[0],
+            'value': row[1],
+            'data_source': row[2],
+            'event_time': (row[3] - timedelta(hours=4)).strftime('%Y-%m-%dT%H:%M:%S') if row[3] else ''
+        }
+        for row in c.fetchall()
+    ]
+    conn.close()
+    return jsonify({'logs': logs})
+
+@app.route('/api/diagnostic_graph/<code>')
+@login_required
+def diagnostic_graph(code):
+    """Get diagnostic graph data for a specific code"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Get diagnostic parameters
+        c.execute('''
+            SELECT start_value, target_value, threshold, time_to_achieve, enabled_at
+            FROM diagnostic_codes 
+            WHERE code = %s AND enabled = 1
+        ''', (code,))
+        diagnostic = c.fetchone()
+        
+        if not diagnostic:
+            return jsonify({'success': False, 'error': 'Diagnostic not found or not enabled'})
+        
+        start_value, target_value, threshold, time_to_achieve, enabled_at = diagnostic
+        
+        if not all([start_value, target_value, threshold, time_to_achieve, enabled_at]):
+            return jsonify({'success': False, 'error': 'Diagnostic parameters not fully configured'})
+        
+        # Get data points from data_logs
+        c.execute('''
+            SELECT value, event_time 
+            FROM data_logs 
+            WHERE code = %s 
+            ORDER BY event_time ASC
+        ''', (code,))
+        data_points = c.fetchall()
+        
+        conn.close()
+        
+        # Format data points
+        formatted_points = []
+        for point in data_points:
+            formatted_points.append({
+                'value': point[0],
+                'timestamp': point[1].isoformat() if point[1] else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'start_value': start_value,
+                'target_value': target_value,
+                'threshold': threshold,
+                'time_to_achieve': time_to_achieve,
+                'enabled_time': enabled_at.isoformat() if enabled_at else None,
+                'data_points': formatted_points
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True) 

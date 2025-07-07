@@ -5,37 +5,41 @@
     <div class="col-md-12">
         <!-- Controls Section -->
         <div class="row mb-3">
-            <!-- Refresh Time Controls -->
-            <div class="col-12 col-md-6 mb-2 mb-md-0">
-                <div class="d-flex flex-wrap align-items-center">
-                    <label for="refreshTime" class="me-2 mb-2 mb-md-0">Modbus Refresh Time (seconds):</label>
-                    <div class="d-flex">
-                        <input type="number" id="refreshTime" class="form-control" style="width: 100px;" min="1" value="5">
-                        <button id="updateRefreshTimeBtn" class="btn btn-primary ms-2">
-                            <i class="fas fa-sync"></i> Update
-                        </button>
-                        <button id="readNowBtn" class="btn btn-success ms-2">
-                            <i class="fas fa-bolt"></i> Read Modbus
-                        </button>
-                    </div>
+            <!-- Chamber Filter Dropdown -->
+            <div class="col-12 col-md-3">
+                <label for="chamberFilter" class="form-label">Filter by Chamber:</label>
+                <select id="chamberFilter" class="form-select">
+                    <option value="all">All Chambers</option>
+                    {% for chamber_name, chamber_data in codes_by_room.items() %}
+                        <option value="{{ chamber_data.room_id }}">{{ chamber_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <!-- Contact Stats -->
+            <div class="col-12 col-md-4">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-flex">
+                    <a href="{{ url_for('contacts') }}" style="text-decoration: none;">
+                        <div class="d-flex gap-2">
+                            <span class="badge bg-info" style="font-size: 1.1em; padding: 8px 12px; cursor: pointer;">
+                                <i class="fas fa-envelope me-1"></i> Email: {{ email_enabled }}/{{ total_contacts }}
+                            </span>
+                            <span class="badge bg-info" style="font-size: 1.1em; padding: 8px 12px; cursor: pointer;">
+                                <i class="fas fa-phone me-1"></i> SMS: {{ sms_enabled }}/{{ total_contacts }}
+                            </span>
+                        </div>
+                    </a>
                 </div>
             </div>
             
-            <!-- Contact Stats and Reset Button -->
-            <div class="col-12 col-md-6">
-                <div class="d-flex flex-wrap justify-content-md-end align-items-center">
-                    <div class="me-3 mb-2 mb-md-0">
-                        <a href="{{ url_for('contacts') }}" style="text-decoration: none;">
-                            <div class="d-flex flex-wrap gap-2">
-                                <span class="badge bg-info" style="font-size: 1.1em; padding: 8px 12px; cursor: pointer;">
-                                    <i class="fas fa-envelope me-1"></i> Email: {{ email_enabled }}/{{ total_contacts }}
-                                </span>
-                                <span class="badge bg-info" style="font-size: 1.1em; padding: 8px 12px; cursor: pointer;">
-                                    <i class="fas fa-phone me-1"></i> SMS: {{ sms_enabled }}/{{ total_contacts }}
-                                </span>
-                            </div>
-                        </a>
-                    </div>
+            <!-- Action Buttons -->
+            <div class="col-12 col-md-5">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-flex gap-2">
+                    <button id="readNowBtn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Read Modbus Now
+                    </button>
                     <button id="resetHistoryBtn" class="btn btn-warning">
                         <i class="fas fa-history"></i> Reset All History
                     </button>
@@ -60,8 +64,64 @@
             {% endif %}
         </div>
 
-        <div class="card shadow p-4 mb-4">
-            <h4 style="color: #003366;">Humidity Diagnostics</h4>
+        <!-- Diagnostics by Chamber -->
+        {% for chamber_name, chamber_data in codes_by_room.items() %}
+        <div class="card shadow p-4 mb-4" data-room-id="{{ chamber_data.room_id }}">
+            <h4 style="color: #003366;">
+                <i class="fas fa-building me-2"></i>{{ chamber_name }}
+                {% if chamber_data.room_id %}
+                <a href="{{ url_for('rooms') }}" class="btn btn-sm btn-outline-secondary ms-2">
+                    <i class="fas fa-cog"></i> Manage
+                </a>
+                {% endif %}
+            </h4>
+            
+            <!-- Temperature Diagnostics for this chamber -->
+            {% if chamber_data.temp %}
+            <h5 style="color: #003366; margin-top: 20px; margin-bottom: 15px;">
+                <i class="fas fa-thermometer-half me-2"></i>Temperature Diagnostics
+            </h5>
+            <div class="table-responsive mb-4">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Description</th>
+                            <th>Current Value</th>
+                            <th>State</th>
+                            <th>Last Failure</th>
+                            <th>History</th>
+                            <th>Last Read</th>
+                            <th>Graph</th>
+                        </tr>
+                    </thead>
+                    <tbody id="temp-codes-body-{{ chamber_data.room_id or 'unassigned' }}">
+                        {% for code in chamber_data.temp %}
+                        <tr {% if code[2] == 'Pass' %}style="background-color: #d4edda !important;"{% elif code[2] == 'Fail' %}style="background-color: #f44336 !important; color: #fff;"{% elif code[2] == 'No Status' %}style="background-color: #ffe066 !important;"{% endif %}>
+                            <td data-label="Code">{{ code[0] }}</td>
+                            <td data-label="Description">{{ code[1] }}</td>
+                            <td data-label="Current Value">{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] or '' }}</td>
+                            <td data-label="State"><strong style="{% if code[2] == 'Pass' %}color: #28a745;{% elif code[2] == 'Fail' %}color: #dc3545;{% else %}color: #ffc107;{% endif %}">{{ code[2] }}</strong></td>
+                            <td data-label="Last Failure">{{ code[3] }}</td>
+                            <td data-label="History">{{ code[4] }}</td>
+                            <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
+                            <td data-label="Graph">
+                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
+                                    <i class="fas fa-chart-line"></i> Graph
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            
+            <!-- Humidity Diagnostics for this chamber -->
+            {% if chamber_data.humidity %}
+            <h5 style="color: #003366; margin-top: 20px; margin-bottom: 15px;">
+                <i class="fas fa-tint me-2"></i>Humidity Diagnostics
+            </h5>
             <div class="table-responsive">
                 <table class="table">
                     <thead>
@@ -73,180 +133,270 @@
                             <th>Last Failure</th>
                             <th>History</th>
                             <th>Last Read</th>
+                            <th>Graph</th>
                         </tr>
                     </thead>
-                    <tbody id="humidity-codes-body">
-                        {% for code in humidity_codes %}
+                    <tbody id="humidity-codes-body-{{ chamber_data.room_id or 'unassigned' }}">
+                        {% for code in chamber_data.humidity %}
                         <tr {% if code[2] == 'Pass' %}style="background-color: #d4edda !important;"{% elif code[2] == 'Fail' %}style="background-color: #f44336 !important; color: #fff;"{% elif code[2] == 'No Status' %}style="background-color: #ffe066 !important;"{% endif %}>
                             <td data-label="Code">{{ code[0] }}</td>
                             <td data-label="Description">{{ code[1] }}</td>
-                            <td data-label="Current Value">{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] }}</td>
+                            <td data-label="Current Value">{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] or '' }}</td>
                             <td data-label="State"><strong style="{% if code[2] == 'Pass' %}color: #28a745;{% elif code[2] == 'Fail' %}color: #dc3545;{% else %}color: #ffc107;{% endif %}">{{ code[2] }}</strong></td>
                             <td data-label="Last Failure">{{ code[3] }}</td>
                             <td data-label="History">{{ code[4] }}</td>
                             <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
+                            <td data-label="Graph">
+                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
+                                    <i class="fas fa-chart-line"></i> Graph
+                                </button>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-        </div>
-        <div class="card shadow p-4 mb-4">
-            <h4 style="color: #003366;">Temperature Diagnostics</h4>
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Code</th>
-                            <th>Description</th>
-                            <th>Current Value</th>
-                            <th>State</th>
-                            <th>Last Failure</th>
-                            <th>History</th>
-                            <th>Last Read</th>
-                        </tr>
-                    </thead>
-                    <tbody id="temp-codes-body">
-                        {% for code in temp_codes %}
-                        <tr {% if code[2] == 'Pass' %}style="background-color: #d4edda !important;"{% elif code[2] == 'Fail' %}style="background-color: #f44336 !important; color: #fff;"{% elif code[2] == 'No Status' %}style="background-color: #ffe066 !important;"{% endif %}>
-                            <td data-label="Code">{{ code[0] }}</td>
-                            <td data-label="Description">{{ code[1] }}</td>
-                            <td data-label="Current Value">{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] }}</td>
-                            <td data-label="State"><strong style="{% if code[2] == 'Pass' %}color: #28a745;{% elif code[2] == 'Fail' %}color: #dc3545;{% else %}color: #ffc107;{% endif %}">{{ code[2] }}</strong></td>
-                            <td data-label="Last Failure">{{ code[3] }}</td>
-                            <td data-label="History">{{ code[4] }}</td>
-                            <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            {% endif %}
+            
+            {% if not chamber_data.temp and not chamber_data.humidity %}
+            <div class="text-center text-muted py-4">
+                <i class="fas fa-info-circle fa-2x mb-3"></i>
+                <p>No diagnostic codes assigned to this chamber yet.</p>
+                <a href="{{ url_for('diagnostic_codes') }}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Diagnostic Code
+                </a>
             </div>
+            {% endif %}
         </div>
+        {% endfor %}
     </div>
 </div>
 
+<!-- Add Plotly.js CDN -->
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
 <script>
-// Add refresh time functionality
-function loadRefreshTime() {
-    fetch('/api/refresh_time')
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById('refreshTime').value = data.refresh_time;
-        })
-        .catch(error => console.error('Error loading refresh time:', error));
+function applyChamberFilter() {
+    const selectedRoomId = document.getElementById('chamberFilter').value;
+    document.querySelectorAll('.card.shadow.p-4.mb-4').forEach(card => {
+        const roomId = card.getAttribute('data-room-id');
+        if (selectedRoomId === 'all' || roomId === selectedRoomId) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 }
 
-document.getElementById('updateRefreshTimeBtn').addEventListener('click', function() {
-    const newTime = parseInt(document.getElementById('refreshTime').value);
-    if (newTime < 1) {
-        alert('Refresh time must be at least 1 second');
-        return;
-    }
+const chamberFilter = document.getElementById('chamberFilter');
+chamberFilter.addEventListener('change', applyChamberFilter);
 
-    fetch('/api/refresh_time', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refresh_time: newTime })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Refresh time updated successfully!');
-        } else {
-            alert('Error updating refresh time: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Error updating refresh time. Please try again.');
-    });
-});
-
-// Add Read Now functionality
+// Add read now functionality
 document.getElementById('readNowBtn').addEventListener('click', function() {
-    const button = this;
-    button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reading...';
-
+    const selectedChamber = document.getElementById('chamberFilter').value;
+    const roomId = selectedChamber === 'all' ? 'all' : selectedChamber;
+    
+    // Disable button and show loading state
+    const btn = this;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reading...';
+    
     fetch('/api/read_now', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-        }
+        },
+        body: JSON.stringify({
+            room_id: roomId
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Update the diagnostics display
+            // Immediately update the display
             updateDiagnostics();
             // Show success message
-            alert('Modbus read completed successfully!');
+            alert('Modbus data read successfully!');
         } else {
-            alert('Error reading Modbus: ' + (data.error || 'Unknown error'));
+            alert('Error reading Modbus data: ' + (data.error || 'Unknown error'));
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Error reading Modbus. Please try again.');
+        alert('Error reading Modbus data. Please try again.');
     })
     .finally(() => {
-        // Re-enable the button
-        button.disabled = false;
-        button.innerHTML = '<i class="fas fa-bolt"></i> Read Now';
+        // Re-enable button and restore original text
+        btn.disabled = false;
+        btn.innerHTML = originalText;
     });
 });
-
-// Load refresh time when page loads
-loadRefreshTime();
 
 function updateDiagnostics() {
     fetch('/api/diagnostics')
         .then(response => response.json())
         .then(data => {
-            // Update humidity codes
-            const humidityBody = document.getElementById('humidity-codes-body');
-            humidityBody.innerHTML = data.humidity_codes.map(code => `
-                <tr ${code[2] === 'Pass' ? 'style="background-color: #d4edda !important;"' : 
-                     code[2] === 'Fail' ? 'style="background-color: #f44336 !important; color: #fff;"' : 
-                     'style="background-color: #ffe066 !important;"'}>
-                    <td data-label="Code">${code[0]}</td>
-                    <td data-label="Description">${code[1]}</td>
-                    <td data-label="Current Value">${code[7] !== null ? code[7] + ' ' + code[6] : 'N/A'}</td>
-                    <td data-label="State"><strong style="${code[2] === 'Pass' ? 'color: #28a745;' : code[2] === 'Fail' ? 'color: #dc3545;' : 'color: #ffc107;'}">${code[2]}</strong></td>
-                    <td data-label="Last Failure">${code[3] || ''}</td>
-                    <td data-label="History">${code[4]}</td>
-                    <td data-label="Last Read">${code[8] || 'Never'}</td>
-                </tr>
-            `).join('');
-
-            // Update temperature codes
-            const tempBody = document.getElementById('temp-codes-body');
-            tempBody.innerHTML = data.temp_codes.map(code => `
-                <tr ${code[2] === 'Pass' ? 'style="background-color: #d4edda !important;"' : 
-                     code[2] === 'Fail' ? 'style="background-color: #f44336 !important; color: #fff;"' : 
-                     'style="background-color: #ffe066 !important;"'}>
-                    <td data-label="Code">${code[0]}</td>
-                    <td data-label="Description">${code[1]}</td>
-                    <td data-label="Current Value">${code[7] !== null ? code[7] + ' ' + code[6] : 'N/A'}</td>
-                    <td data-label="State"><strong style="${code[2] === 'Pass' ? 'color: #28a745;' : code[2] === 'Fail' ? 'color: #dc3545;' : 'color: #ffc107;'}">${code[2]}</strong></td>
-                    <td data-label="Last Failure">${code[3] || ''}</td>
-                    <td data-label="History">${code[4]}</td>
-                    <td data-label="Last Read">${code[8] || 'Never'}</td>
-                </tr>
-            `).join('');
-
+            // Update the entire dashboard with chamber-based data
+            const dashboardContainer = document.querySelector('.col-md-12');
+            
+            // Remove all existing chamber diagnostic cards
+            dashboardContainer.querySelectorAll('.card.shadow.p-4.mb-4').forEach(card => card.remove());
+            
+            // Add new chamber-based diagnostic sections
+            Object.entries(data.codes_by_room).forEach(([chamberName, chamberData]) => {
+                const chamberCard = document.createElement('div');
+                chamberCard.className = 'card shadow p-4 mb-4';
+                chamberCard.setAttribute('data-room-id', chamberData.room_id);
+                
+                let cardContent = `
+                    <h4 style="color: #003366;">
+                        <i class="fas fa-building me-2"></i>${chamberName}
+                        ${chamberData.room_id ? `<a href="/rooms" class="btn btn-sm btn-outline-secondary ms-2"><i class="fas fa-cog"></i> Manage</a>` : ''}
+                    </h4>
+                `;
+                
+                // Add temperature diagnostics
+                if (chamberData.temp && chamberData.temp.length > 0) {
+                    cardContent += `
+                        <h5 style="color: #003366; margin-top: 20px; margin-bottom: 15px;">
+                            <i class="fas fa-thermometer-half me-2"></i>Temperature Diagnostics
+                        </h5>
+                        <div class="table-responsive mb-4">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Description</th>
+                                        <th>Current Value</th>
+                                        <th>State</th>
+                                        <th>Last Failure</th>
+                                        <th>History</th>
+                                        <th>Last Read</th>
+                                        <th>Graph</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="temp-codes-body-${chamberData.room_id || 'unassigned'}">
+                    `;
+                    
+                    chamberData.temp.forEach(code => {
+                        const bgColor = code[2] === 'Pass' ? '#d4edda' : code[2] === 'Fail' ? '#f44336' : '#ffe066';
+                        const textColor = code[2] === 'Pass' ? '#28a745' : code[2] === 'Fail' ? '#dc3545' : '#ffc107';
+                        cardContent += `
+                            <tr style="background-color: ${bgColor} !important; ${code[2] === 'Fail' ? 'color: #fff;' : ''}">
+                                <td data-label="Code">${code[0]}</td>
+                                <td data-label="Description">${code[1]}</td>
+                                <td data-label="Current Value">${code[7] !== null ? code[7] + ' ' + (code[6] || '') : 'N/A'}</td>
+                                <td data-label="State"><strong style="color: ${textColor};">${code[2]}</strong></td>
+                                <td data-label="Last Failure">${code[3] || ''}</td>
+                                <td data-label="History">${code[4]}</td>
+                                <td data-label="Last Read">${code[8] || 'Never'}</td>
+                                <td data-label="Graph">
+                                    <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
+                                        <i class="fas fa-chart-line"></i> Graph
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    cardContent += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                
+                // Add humidity diagnostics
+                if (chamberData.humidity && chamberData.humidity.length > 0) {
+                    cardContent += `
+                        <h5 style="color: #003366; margin-top: 20px; margin-bottom: 15px;">
+                            <i class="fas fa-tint me-2"></i>Humidity Diagnostics
+                        </h5>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Description</th>
+                                        <th>Current Value</th>
+                                        <th>State</th>
+                                        <th>Last Failure</th>
+                                        <th>History</th>
+                                        <th>Last Read</th>
+                                        <th>Graph</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="humidity-codes-body-${chamberData.room_id || 'unassigned'}">
+                    `;
+                    
+                    chamberData.humidity.forEach(code => {
+                        const bgColor = code[2] === 'Pass' ? '#d4edda' : code[2] === 'Fail' ? '#f44336' : '#ffe066';
+                        const textColor = code[2] === 'Pass' ? '#28a745' : code[2] === 'Fail' ? '#dc3545' : '#ffc107';
+                        cardContent += `
+                            <tr style="background-color: ${bgColor} !important; ${code[2] === 'Fail' ? 'color: #fff;' : ''}">
+                                <td data-label="Code">${code[0]}</td>
+                                <td data-label="Description">${code[1]}</td>
+                                <td data-label="Current Value">${code[7] !== null ? code[7] + ' ' + (code[6] || '') : 'N/A'}</td>
+                                <td data-label="State"><strong style="color: ${textColor};">${code[2]}</strong></td>
+                                <td data-label="Last Failure">${code[3] || ''}</td>
+                                <td data-label="History">${code[4]}</td>
+                                <td data-label="Last Read">${code[8] || 'Never'}</td>
+                                <td data-label="Graph">
+                                    <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
+                                        <i class="fas fa-chart-line"></i> Graph
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    cardContent += `
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+                
+                // Add empty state if no diagnostics
+                if ((!chamberData.temp || chamberData.temp.length === 0) && (!chamberData.humidity || chamberData.humidity.length === 0)) {
+                    cardContent += `
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-info-circle fa-2x mb-3"></i>
+                            <p>No diagnostic codes assigned to this chamber yet.</p>
+                            <a href="/diagnostic_codes" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Add Diagnostic Code
+                            </a>
+                        </div>
+                    `;
+                }
+                
+                chamberCard.innerHTML = cardContent;
+                
+                // Insert the chamber card before the script tag
+                const scriptTag = dashboardContainer.querySelector('script');
+                dashboardContainer.insertBefore(chamberCard, scriptTag);
+            });
+            
             // Update notifications
             const notificationCenter = document.getElementById('notification-center');
             if (data.notifications && data.notifications.length > 0) {
+                // Build a map from code to chamber name
+                const codeToChamber = {};
+                Object.entries(data.codes_by_room).forEach(([chamberName, chamberData]) => {
+                    ['temp', 'humidity'].forEach(type => {
+                        (chamberData[type] || []).forEach(code => {
+                            codeToChamber[code[0]] = chamberName;
+                        });
+                    });
+                });
                 notificationCenter.innerHTML = `
                     <div class="alert alert-warning mb-4">
                         <strong>Notification Center:</strong>
                         <ul class="mb-0" id="notification-list">
                             ${data.notifications.map(n => `
                                 <li>
-                                    <strong>${n[0]}</strong> (${n[1]}) - 
+                                    <strong>${n[0]}</strong> (${n[1]}) in <strong>Chamber: ${codeToChamber[n[0]] || 'Unassigned'}</strong> - 
                                     <span style="${n[2] === 'Fail' ? 'color: red; font-weight: bold;' : 
                                                  n[2] === 'No Status' ? 'color: orange; font-weight: bold;' : 
                                                  'font-weight: bold;'}">${n[2]}</span>
@@ -259,24 +409,11 @@ function updateDiagnostics() {
             } else {
                 notificationCenter.innerHTML = '';
             }
-
-            // Update contact counter
-            const contactCounter = document.querySelector('.badge.bg-info');
-            if (contactCounter && data.contact_stats) {
-                const contactContainer = document.querySelector('.d-flex.gap-2');
-                if (contactContainer) {
-                    contactContainer.innerHTML = `
-                        <span class="badge bg-info" style="font-size: 1.1em; padding: 8px 12px; cursor: pointer;">
-                            <i class="fas fa-envelope me-1"></i> Email: ${data.contact_stats.email_enabled}/${data.contact_stats.total}
-                        </span>
-                        <span class="badge bg-info" style="font-size: 1.1em; padding: 8px 12px; cursor: pointer;">
-                            <i class="fas fa-phone me-1"></i> SMS: ${data.contact_stats.sms_enabled}/${data.contact_stats.total}
-                        </span>
-                    `;
-                }
-            }
+            applyChamberFilter(); // Re-apply filter after updating cards
         })
-        .catch(error => console.error('Error fetching diagnostics:', error));
+        .catch(error => {
+            console.error('Error updating diagnostics:', error);
+        });
 }
 
 // Add reset history functionality
@@ -308,5 +445,286 @@ document.getElementById('resetHistoryBtn').addEventListener('click', function() 
 
 // Update every second
 setInterval(updateDiagnostics, 1000);
+
+// Graph functionality
+function showDiagnosticGraph(code, description) {
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'graphModal';
+    modal.setAttribute('tabindex', '-1');
+    modal.setAttribute('aria-labelledby', 'graphModalLabel');
+    modal.setAttribute('aria-hidden', 'true');
+    
+    modal.innerHTML = `
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="graphModalLabel">Diagnostic Graph: ${code} - ${description}</h5>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="fullscreenGraphBtn" title="Fullscreen"><i class="fas fa-expand"></i></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="graphContainer" style="height: 500px; width: 100%; min-width: 300px; min-height: 300px;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add modal to body
+    document.body.appendChild(modal);
+    
+    // Show modal
+    const modalInstance = new bootstrap.Modal(modal);
+    modalInstance.show();
+    
+    // Load graph data
+    loadGraphData(code, modal);
+    
+    // Fullscreen button functionality
+    modal.querySelector('#fullscreenGraphBtn').onclick = function() {
+        const graphContainer = modal.querySelector('#graphContainer');
+        if (!document.fullscreenElement) {
+            graphContainer.requestFullscreen();
+        } else {
+            document.exitFullscreen();
+        }
+    };
+    
+    // Clean up modal when hidden
+    modal.addEventListener('hidden.bs.modal', function() {
+        document.body.removeChild(modal);
+    });
+}
+
+function loadGraphData(code, modal) {
+    fetch(`/api/diagnostic_graph/${code}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                createGraph(data.data, modal);
+            } else {
+                document.getElementById('graphContainer').innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        ${data.error || 'Failed to load graph data'}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading graph data:', error);
+            document.getElementById('graphContainer').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Error loading graph data. Please try again.
+                </div>
+            `;
+        });
+}
+
+function toLocalString(date) {
+    // Returns a string in the user's local time, e.g. '2024-06-15 08:20:00', strips GMT/UTC/Z
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).replace(/,| GMT.*|\s*GMT.*|\s*UTC.*|\s*Z$/, '').trim();
+}
+
+function parseAsUTC(timestamp) {
+    // Ensures the timestamp is parsed as UTC, even if no Z is present
+    if (!timestamp.endsWith('Z')) {
+        return new Date(timestamp + 'Z');
+    }
+    return new Date(timestamp);
+}
+
+// Helper to shift a date by -4 hours and return ISO string (for America/New_York, UTC-4)
+function toLocalISOString(date) {
+    return new Date(date.getTime() - 4 * 60 * 60 * 1000).toISOString();
+}
+
+function createGraph(data, modal) {
+    const container = document.getElementById('graphContainer');
+    
+    if (!data.start_value || !data.target_value || !data.time_to_achieve || !data.enabled_time) {
+        container.innerHTML = `
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                No diagnostic parameters available for graphing. This diagnostic may not be enabled or configured.
+            </div>
+        `;
+        return;
+    }
+    
+    // Prepare time window in local time
+    const startTime = parseAsUTC(data.enabled_time);
+    const timeToAchieve = data.time_to_achieve;
+    const endTime = new Date(startTime.getTime() + timeToAchieve * 1000);
+    const now = new Date();
+    // Generate expected/threshold curves within window (matching trial.py logic)
+    const timePoints = [];
+    const expectedValues = [];
+    const upperThreshold = [];
+    const lowerThreshold = [];
+    const timeStep = Math.max(1, Math.floor(timeToAchieve / 50));
+    
+    // Calculate slope and intercept (matching trial.py logic)
+    const m = (data.target_value - data.start_value) / timeToAchieve;
+    const startTimeSeconds = startTime.getTime() / 1000;
+    const b = data.start_value - m * startTimeSeconds;
+    
+    for (let t = 0; t <= timeToAchieve; t += timeStep) {
+        const timestamp = new Date(startTime.getTime() + t * 1000);
+        timePoints.push(toLocalISOString(timestamp)); // Use shifted ISO string for Plotly date axis
+        
+        // Calculate expected value using trial.py logic
+        const currentTimeSeconds = timestamp.getTime() / 1000;
+        let expectedValue;
+        if (currentTimeSeconds < startTimeSeconds) {
+            expectedValue = data.start_value;
+        } else if (currentTimeSeconds >= startTimeSeconds + timeToAchieve) {
+            expectedValue = data.target_value;
+        } else {
+            expectedValue = m * currentTimeSeconds + b;
+        }
+        
+        // Clamp expected value to bounds
+        expectedValue = Math.max(Math.min(expectedValue, data.target_value), data.start_value);
+        
+        expectedValues.push(expectedValue);
+        upperThreshold.push(expectedValue + data.threshold);
+        lowerThreshold.push(expectedValue - data.threshold);
+    }
+    // Actual data points within window
+    const actualTimes = [];
+    const actualValues = [];
+    const actualColors = [];
+    const actualTooltips = [];
+    data.data_points.forEach(point => {
+        if (point.timestamp) {
+            const ptTime = parseAsUTC(point.timestamp);
+            if (ptTime >= startTime && ptTime <= endTime) {
+                actualTimes.push(toLocalISOString(ptTime)); // Use shifted ISO string for Plotly date axis
+                actualValues.push(point.value);
+                // Determine if point is within bounds (matching trial.py logic)
+                const currentTimeSeconds = ptTime.getTime() / 1000;
+                let expectedValue;
+                if (currentTimeSeconds < startTimeSeconds) {
+                    expectedValue = data.start_value;
+                } else if (currentTimeSeconds >= startTimeSeconds + timeToAchieve) {
+                    expectedValue = data.target_value;
+                } else {
+                    expectedValue = m * currentTimeSeconds + b;
+                }
+                
+                // Clamp expected value to bounds
+                expectedValue = Math.max(Math.min(expectedValue, data.target_value), data.start_value);
+                
+                const deviation = Math.abs(point.value - expectedValue);
+                actualColors.push(deviation <= data.threshold && point.value <= data.target_value ? 'green' : 'red');
+                actualTooltips.push(`Value: ${point.value}<br>Time: ${ptTime.toLocaleString()}`);
+            }
+        }
+    });
+    // Plotly traces
+    const traces = [
+        {
+            x: timePoints,
+            y: expectedValues,
+            mode: 'lines',
+            name: 'Expected',
+            line: {color: 'blue', width: 2}
+        },
+        {
+            x: timePoints,
+            y: upperThreshold,
+            mode: 'lines',
+            name: 'Upper Threshold',
+            line: {color: 'orange', width: 1, dash: 'dash'}
+        },
+        {
+            x: timePoints,
+            y: lowerThreshold,
+            mode: 'lines',
+            name: 'Lower Threshold',
+            line: {color: 'orange', width: 1, dash: 'dash'}
+        },
+        {
+            x: actualTimes,
+            y: actualValues,
+            mode: 'markers',
+            name: 'Actual',
+            marker: {
+                color: actualColors,
+                size: 10,
+                symbol: 'circle',
+                line: {width: 1, color: '#333'}
+            },
+            text: actualTooltips,
+            hoverinfo: 'text'
+        }
+    ];
+    // Add 'Now' line if now is within window
+    if (now >= startTime && now <= endTime) {
+        const nowISO = toLocalISOString(now);
+        traces.push({
+            x: [nowISO, nowISO],
+            y: [Math.min(...expectedValues, ...actualValues, ...lowerThreshold), Math.max(...expectedValues, ...actualValues, ...upperThreshold)],
+            mode: 'lines',
+            name: 'Now',
+            line: {color: 'red', width: 2, dash: 'dot'},
+            hoverinfo: 'skip',
+            showlegend: true
+        });
+    }
+    // Layout
+    const layout = {
+        title: '',
+        xaxis: {
+            title: 'Time',
+            zeroline: false,
+            showgrid: true,
+            automargin: true,
+            type: 'date', // Use date axis for time
+            // range: [toLocalString(startTime), toLocalString(endTime)], // Remove or update if needed
+        },
+        yaxis: {
+            title: 'Value',
+            zeroline: false,
+            showgrid: true,
+            automargin: true
+        },
+        legend: {orientation: 'h', x: 0.5, xanchor: 'center', y: 1.15},
+        margin: {l: 60, r: 30, t: 30, b: 60},
+        hovermode: 'closest',
+        dragmode: 'pan',
+        autosize: true,
+    };
+    // Config
+    const config = {
+        responsive: true,
+        displayModeBar: true,
+        displaylogo: false,
+        modeBarButtonsToAdd: ['zoom2d', 'pan2d', 'resetScale2d', 'toImage', 'autoScale2d', 'select2d', 'lasso2d', 'toggleSpikelines', 'zoomIn2d', 'zoomOut2d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleHover'],
+        toImageButtonOptions: {
+            format: 'png',
+            filename: 'diagnostic_graph',
+            height: 600,
+            width: 1000,
+            scale: 2
+        }
+    };
+    // Use Plotly.react for smooth updates
+    Plotly.react(container, traces, layout, config);
+}
 </script>
 {% endblock %} 

@@ -5,9 +5,9 @@ import json
 from datetime import datetime
 
 # MQTT Configuration
-BROKER = "10.160.1.22"
+BROKER = "10.160.0.157"
 PORT = 1883
-TOPIC = "sensors/temperature"  # This should match the topic in your diagnostic code
+TOPIC = "sensors/temperature/1"  # This should match the topic in your diagnostic code
 QOS = 0
 
 def generate_sensor_data():

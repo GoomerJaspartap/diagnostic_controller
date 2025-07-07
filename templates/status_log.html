@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}Data Log{% endblock %}
+{% block title %}Status Log - Diagnostic Controller{% endblock %}
 {% block content %}
 <div class="container mt-4">
-    <h2 class="mb-4" style="color: #003366;">Data Log</h2>
+    <h2 class="mb-4" style="color: #003366;">Status Log</h2>
     <form id="filter-form" class="row g-3 mb-3">
         <div class="col-md-2">
             <label for="code" class="form-label">Code</label>
@@ -42,8 +42,12 @@
                 <tr>
                     <th>Time</th>
                     <th>Code</th>
+                    <th>Description</th>
+                    <th>Type</th>
+                    <th>State</th>
                     <th>Value</th>
-                    <th>Data Source</th>
+                    <th>Last Failure</th>
+                    <th>History Count</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -54,7 +58,7 @@
 function fetchLogs() {
     const form = document.getElementById('filter-form');
     const params = new URLSearchParams(new FormData(form)).toString();
-    fetch('/api/logs?' + params)
+    fetch('/api/status_log?' + params)
         .then(res => res.json())
         .then(data => {
             const tbody = document.querySelector('#logs-table tbody');
@@ -67,8 +71,12 @@ function fetchLogs() {
                 tbody.innerHTML += `<tr>
                     <td data-label="Time">${log.event_time}</td>
                     <td data-label="Code">${log.code}</td>
+                    <td data-label="Description">${log.description}</td>
+                    <td data-label="Type">${log.type}</td>
+                    <td data-label="State"><strong style="${log.state === 'Fail' ? 'color: #dc3545;' : log.state === 'No Status' ? 'color: #ffc107;' : 'color: #28a745;'}">${log.state}</strong></td>
                     <td data-label="Value">${log.value !== null ? log.value : ''}</td>
-                    <td data-label="Data Source">${log.data_source || ''}</td>
+                    <td data-label="Last Failure">${log.last_failure || ''}</td>
+                    <td data-label="History Count">${log.history_count}</td>
                 </tr>`;
             });
         });

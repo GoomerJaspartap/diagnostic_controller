@@ -71,17 +71,23 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
                 <span style=\"margin-left: 24px;\"><strong>Refresh Time:</strong> {refresh_time} seconds</span>
             </div>
 """
-    for dtype, diagnostics in table_data.items():
+    for room, diagnostics in table_data.items():
         html += f"""
-            <h2 style=\"color: #1a2a44; font-size: 19px; margin: 28px 0 12px 0; border-left: 3px solid #1a2a44; padding-left: 12px; letter-spacing: 0.2px;\">{dtype} Diagnostics</h2>
+            <h2 style=\"color: #1a2a44; font-size: 19px; margin: 28px 0 12px 0; border-left: 3px solid #1a2a44; padding-left: 12px; letter-spacing: 0.2px;\">Room: {room}</h2>
             <div style=\"overflow-x: auto;\">
             <table style=\"width: 100%; border-collapse: collapse; font-size: 15px; background: #fff; border-radius: 6px;\">
                 <thead>
                     <tr style=\"background: #1a2a44; color: #fff;\">
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Code</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Description</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Type</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">State</th>
-                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Value</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Current Value</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Start Value</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Target Value</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Threshold</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Time to Achieve</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Enabled At</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Last Read Time</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Last Failure</th>
                         <th style=\"padding: 13px 8px; text-align: left; font-weight: 600;\">History</th>
@@ -93,13 +99,33 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
             state_color = {'Pass': '#2ecc71', 'Fail': '#e74c3c', 'NoStatus': '#7f8c8d'}.get(row['state'], '#7f8c8d')
             state_bg = {'Pass': '#eafaf1', 'Fail': '#fdeaea', 'NoStatus': '#f4f6fa'}.get(row['state'], '#f4f6fa')
             border_style = 'border-bottom: 1px solid #e0e6ed;' if i < len(diagnostics)-1 else ''
+            # Format enabled_at with -4 hours if present
+            enabled_at = row.get('enabled_at', 'N/A')
+            if enabled_at and enabled_at != 'N/A':
+                try:
+                    from datetime import datetime, timedelta
+                    if isinstance(enabled_at, str):
+                        enabled_at_dt = datetime.fromisoformat(enabled_at)
+                    else:
+                        enabled_at_dt = enabled_at
+                    enabled_at_shifted = (enabled_at_dt - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    enabled_at_shifted = enabled_at
+            else:
+                enabled_at_shifted = 'N/A'
             html += f"""                    <tr style=\"background: {state_bg}; {border_style}\">
                         <td style=\"padding: 11px 8px;\">{row['code']}</td>
                         <td style=\"padding: 11px 8px;\">{row['description']}</td>
+                        <td style=\"padding: 11px 8px;\">{row['type']}</td>
                         <td style=\"padding: 11px 8px;\">
                             <span style=\"display: inline-block; min-width: 54px; padding: 2px 10px; border-radius: 12px; background: {state_bg}; color: {state_color}; font-weight: 600; font-size: 14px; text-align: center;\">{row['state']}</span>
                         </td>
                         <td style=\"padding: 11px 8px;\">{row.get('value', 'N/A')}</td>
+                        <td style=\"padding: 11px 8px;\">{row.get('start_value', 'N/A')}</td>
+                        <td style=\"padding: 11px 8px;\">{row.get('target_value', 'N/A')}</td>
+                        <td style=\"padding: 11px 8px;\">{row.get('threshold', 'N/A')}</td>
+                        <td style=\"padding: 11px 8px;\">{row.get('time_to_achieve', 'N/A')}</td>
+                        <td style=\"padding: 11px 8px;\">{enabled_at_shifted}</td>
                         <td style=\"padding: 11px 8px;\">{row.get('last_read_time', 'N/A')}</td>
                         <td style=\"padding: 11px 8px;\">{row['last_failure']}</td>
                         <td style=\"padding: 11px 8px;\">{row.get('history_count', 'N/A')}</td>
@@ -111,7 +137,7 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
 """
     html += f"""            <div style=\"margin-top: 30px; padding-top: 18px; border-top: 1px solid #e0e6ed; text-align: center; color: #7f8c8d; font-size: 13px;\">
                 <div style=\"margin-bottom: 6px;\">Generated on {format_datetime(current_time)}. Do not reply to this email.</div>
-                <div style=\"font-size: 12px;\">&copy; {datetime.datetime.now().year} Automotive Center of Excellence. All rights reserved.</div>
+                <div style=\"font-size: 12px;\">&copy; {datetime.now().year} Automotive Center of Excellence. All rights reserved.</div>
                 <div style=\"margin-top: 4px;\"><a href=\"https://ace.ontariotechu.ca\" style=\"color: #1a2a44; text-decoration: none;\">ace.ontariotechu.ca</a></div>
             </div>
         </div>
@@ -170,13 +196,14 @@ def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
                         </tr>
                     </table>
     """
-    for dtype, diagnostics in table_data.items():
+    for room, diagnostics in table_data.items():
         pdf_html += f"""
-                    <h2 style='color:#1a2a44; font-size:18px; margin:24px 0 10px 0; border-left:4px solid #1a2a44; padding-left:10px;'>{dtype} Diagnostics</h2>
+                    <h2 style='color:#1a2a44; font-size:18px; margin:24px 0 10px 0; border-left:4px solid #1a2a44; padding-left:10px;'>Room: {room}</h2>
                     <table width='100%' border='0' cellpadding='0' cellspacing='0' style='border-collapse:collapse; font-size:14px; margin-bottom:24px;'>
                         <tr style='background:#1a2a44; color:#fff;'>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Code</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Description</th>
+                            <th style='padding:10px; border:1px solid #e0e6ed;'>Type</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>State</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Value</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Last Read Time</th>
@@ -191,6 +218,7 @@ def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
                         <tr style='background:{bg_color};'>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row['code']}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row['description']}</td>
+                            <td style='padding:8px; border:1px solid #e0e6ed;'>{row['type']}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed; color:{state_color}; font-weight:bold;'>{row['state']}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row.get('value', 'N/A')}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row.get('last_read_time', 'N/A')}</td>

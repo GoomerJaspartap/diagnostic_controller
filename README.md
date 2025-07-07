@@ -1,11 +1,12 @@
 # Diagnostic Controller
 
-A comprehensive web-based diagnostics and alerting system for industrial devices, supporting both Modbus and MQTT data sources. Features real-time monitoring, automated alerts, and professional reporting capabilities.
+A comprehensive web-based diagnostics and alerting system for industrial devices, supporting both Modbus and MQTT data sources. Features real-time monitoring, automated alerts, professional reporting capabilities, and **room-based organization** for better facility management.
 
 ## 🚀 Features
 
 - **Multi-Protocol Support**: Monitor devices via Modbus TCP and MQTT
-- **Real-time Dashboard**: Live diagnostic status with auto-refresh
+- **Room Management**: Organize diagnostic codes by rooms/locations for better facility oversight
+- **Real-time Dashboard**: Live diagnostic status with auto-refresh, grouped by room
 - **Comprehensive Logging**: Persistent, filterable logs of all state changes
 - **Smart Alerting**: Email and SMS notifications for fault conditions
 - **Professional Reports**: PDF generation with branded templates
@@ -18,10 +19,34 @@ A comprehensive web-based diagnostics and alerting system for industrial devices
 The system consists of several microservices:
 
 - **Web Application**: Flask-based dashboard and management interface
-- **PostgreSQL Database**: Persistent storage for diagnostics, logs, and configuration
+- **PostgreSQL Database**: Persistent storage for diagnostics, logs, configuration, and room management
 - **MQTT Broker**: Eclipse Mosquitto for MQTT device communication
 - **MQTT Reader**: Service that processes MQTT sensor data
 - **Modbus Reader**: Service that polls Modbus devices
+
+## 🏢 Room Management
+
+The system now supports organizing diagnostic codes by rooms or locations:
+
+- **Room CRUD Operations**: Create, read, update, and delete rooms through the web interface
+- **Diagnostic Assignment**: Assign diagnostic codes to specific rooms during creation or editing
+- **Room-based Dashboard**: View diagnostics grouped by room for better facility oversight
+- **Search by Room**: Filter diagnostic codes by room name in the diagnostic codes page
+
+### Migration from Existing Installations
+
+If you're upgrading from a previous version, run the migration script to add room management:
+
+```bash
+# Run the migration script
+python migrate_rooms.py
+```
+
+This will:
+- Add the `room_id` column to the `diagnostic_codes` table
+- Create the `rooms` table
+- Add sample rooms (Lab 101, Control Room, Server Room, etc.)
+- Preserve all existing diagnostic codes (they'll be marked as "Unassigned")
 
 ## 🐳 Docker Setup
 
@@ -156,15 +181,15 @@ docker-compose exec db psql -U diagnostics_user -d diagnostics
 
 1. **Start the system**: `docker-compose up -d`
 2. **Add MQTT diagnostic code** in web interface
-3. **Publish test data**:
+3. **Install MQTT client**
    ```bash
-   # Install MQTT client
    pip install paho-mqtt
-   
-   # Run test sensor
+   ```
+4. **Run test sensor**
+   ```bash
    python test_mqtt_sensor.py
    ```
-4. **Monitor dashboard** for real-time updates
+5. **Monitor dashboard** for real-time updates
 
 ### Modbus Testing
 
@@ -182,12 +207,17 @@ diagnostic_controller/
 ├── EmailAPI.py           # Email and PDF generation
 ├── AlertAPI.py           # Alert management
 ├── TwilioAPI.py          # SMS functionality
+├── migrate_rooms.py      # Room management migration script
 ├── docker-compose.yml    # Docker orchestration
 ├── Dockerfile.webapp     # Web app container
 ├── Dockerfile.mqtt       # MQTT reader container
 ├── Dockerfile.modbus     # Modbus reader container
 ├── requirements.txt      # Python dependencies
 ├── templates/            # HTML templates
+│   ├── rooms.html        # Room management interface
+│   ├── add_room.html     # Add room form
+│   ├── edit_room.html    # Edit room form
+│   └── ...               # Other templates
 ├── static/              # CSS, JS, images
 ├── mosquitto/           # MQTT broker config
 │   ├── config/
@@ -231,6 +261,11 @@ diagnostic_controller/
    - Verify credentials in `.env` file
    - Check service logs for authentication errors
    - Ensure proper network access for external services
+
+5. **Room management issues**
+   - Run migration script: `python migrate_rooms.py`
+   - Check database schema: `docker-compose exec db psql -U diagnostics_user -d diagnostics -c "\d rooms"`
+   - Verify room assignments in diagnostic codes
 
 ### Log Locations
 

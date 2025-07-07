@@ -61,6 +61,42 @@
     .btn-group-action a {
         white-space: nowrap;
     }
+    
+    .room-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-left: 4px solid #003366;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .room-header h3 {
+        margin: 0;
+        color: #003366;
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+    
+    .room-header .room-actions {
+        margin-top: 10px;
+    }
+    
+    .type-badge {
+        font-size: 0.8em;
+        padding: 3px 8px;
+        margin-left: 8px;
+    }
+    
+    .type-badge.temperature {
+        background-color: #ff6b35 !important;
+        color: white;
+    }
+    
+    .type-badge.humidity {
+        background-color: #4ecdc4 !important;
+        color: white;
+    }
 </style>
 
 <div class="row justify-content-center">
@@ -82,12 +118,19 @@
             </form>
         </div>
 
-        <!-- Temperature Section -->
-        <div class="card shadow p-4 mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h2 style="color: #003366;">Temperature Diagnostic Codes</h2>
-                <a href="/add_diagnostic_code?type=Temperature" class="btn btn-primary" style="background-color: #003366; border-color: #003366;">Add Code</a>
+        <!-- Add Code Button -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 style="color: #003366;">Diagnostic Codes by Room</h2>
+            <div>
+                <a href="/add_diagnostic_code?type=Temperature" class="btn btn-primary me-2" style="background-color: #003366; border-color: #003366;">
+                    <i class="fas fa-plus"></i> Add Temperature Code
+                </a>
+                <a href="/add_diagnostic_code?type=Humidity" class="btn btn-primary" style="background-color: #003366; border-color: #003366;">
+                    <i class="fas fa-plus"></i> Add Humidity Code
+                </a>
             </div>
+        </div>
+
             {% with messages = get_flashed_messages(with_categories=true) %}
               {% if messages %}
                 {% for category, message in messages %}
@@ -95,67 +138,113 @@
                 {% endfor %}
               {% endif %}
             {% endwith %}
+
+        <!-- Diagnostic Codes by Room -->
+        {% if codes_by_room %}
+            {% for room_name, codes in codes_by_room.items() %}
+            <div class="card shadow mb-4">
+                <div class="room-header">
+                    <h3>
+                        <i class="fas fa-building me-2"></i>{{ room_name }}
+                        {% if room_name != 'Unassigned' %}
+                        <a href="{{ url_for('rooms') }}" class="btn btn-sm btn-outline-secondary ms-2">
+                            <i class="fas fa-cog"></i> Manage Rooms
+                        </a>
+                        {% endif %}
+                    </h3>
+                    <div class="room-actions">
+                        <span class="badge bg-info">{{ codes|length }} diagnostic code{{ 's' if codes|length != 1 else '' }}</span>
+                        {% if room_name != 'Unassigned' %}
+                        <a href="/add_diagnostic_code" class="btn btn-sm btn-success ms-2">
+                            <i class="fas fa-plus"></i> Add to {{ room_name }}
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="card-body">
             <div class="table-responsive">
             <table class="table table-striped">
                 <thead>
                     <tr>
                         <th>Code</th>
                         <th>Description</th>
+                                    <th>Type</th>
                         <th>State</th>
                         <th>Last Failure</th>
                         <th>History</th>
                         <th>Data Source</th>
-                        <th>Limits</th>
+                        <th>Diagnostic Parameters</th>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% if temp_codes %}
-                        {% for code in temp_codes %}
+                                {% for code in codes %}
                         <tr>
                             <td data-label="Code">{{ code[1] }}</td>
                             <td data-label="Description">{{ code[2] }}</td>
+                                    <td data-label="Type">
+                                        <span class="badge type-badge {{ code[3].lower() }}">
+                                            <i class="fas {% if code[3] == 'Temperature' %}fa-thermometer-half{% else %}fa-tint{% endif %}"></i>
+                                            {{ code[3] }}
+                                        </span>
+                                    </td>
                             <td data-label="State">{{ code[4] }}</td>
                             <td data-label="Last Failure">{{ code[5] }}</td>
                             <td data-label="History">{{ code[6] }}</td>
                             <td data-label="Data Source">
-                                <span class="badge {% if code[7] == 'modbus' %}bg-primary{% else %}bg-success{% endif %}" 
+                                        <span class="badge {% if code[8] == 'modbus' %}bg-primary{% else %}bg-success{% endif %}" 
                                       data-bs-toggle="popover" 
                                       data-bs-html="true"
-                                      data-bs-content="{% if code[7] == 'modbus' %}
+                                              data-bs-content="{% if code[8] == 'modbus' %}
                                         <strong>Modbus Configuration</strong>
-                                        <div><i class='fas fa-network-wired'></i> IP: {{ code[8] }}</div>
-                                        <div><i class='fas fa-plug'></i> Port: {{ code[9] }}</div>
-                                        <div><i class='fas fa-microchip'></i> Unit ID: {{ code[10] }}</div>
-                                        <div><i class='fas fa-database'></i> Register: {{ code[11] }} ({{ code[12] }})</div>
-                                        <div><i class='fas fa-code'></i> Type: {{ code[13] }}</div>
-                                        <div><i class='fas fa-sort'></i> Order: {{ code[14] }}</div>
-                                        <div><i class='fas fa-calculator'></i> Scale: {{ code[15] }} {{ code[16] }}</div>
-                                        <div><i class='fas fa-plus-minus'></i> Offset: {{ code[17] }}</div>
-                                        <div><i class='fas fa-function'></i> Function: {{ code[18] }}</div>
+                                                <div><i class='fas fa-network-wired'></i> IP: {{ code[9] }}</div>
+                                                <div><i class='fas fa-plug'></i> Port: {{ code[10] }}</div>
+                                                <div><i class='fas fa-microchip'></i> Unit ID: {{ code[11] }}</div>
+                                                <div><i class='fas fa-database'></i> Register: {{ code[12] }} ({{ code[13] }})</div>
+                                                <div><i class='fas fa-code'></i> Type: {{ code[14] }}</div>
+                                                <div><i class='fas fa-sort'></i> Order: {{ code[15] }}</div>
+                                                <div><i class='fas fa-calculator'></i> Scale: {{ code[16] }} {{ code[17] }}</div>
+                                                <div><i class='fas fa-plus-minus'></i> Offset: {{ code[18] }}</div>
+                                                <div><i class='fas fa-function'></i> Function: {{ code[19] }}</div>
                                       {% else %}
                                         <strong>MQTT Configuration</strong>
-                                        <div><i class='fas fa-server'></i> Broker: {{ code[19] }}</div>
-                                        <div><i class='fas fa-plug'></i> Port: {{ code[20] }}</div>
-                                        <div><i class='fas fa-broadcast-tower'></i> Topic: {{ code[21] }}</div>
-                                        <div><i class='fas fa-user'></i> Username: {{ code[22] or 'None' }}</div>
-                                        <div><i class='fas fa-shield-alt'></i> QoS: {{ code[24] }}</div>
+                                                <div><i class='fas fa-server'></i> Broker: {{ code[20] }}</div>
+                                                <div><i class='fas fa-plug'></i> Port: {{ code[21] }}</div>
+                                                <div><i class='fas fa-broadcast-tower'></i> Topic: {{ code[22] }}</div>
+                                                <div><i class='fas fa-user'></i> Username: {{ code[23] or 'None' }}</div>
+                                                <div><i class='fas fa-shield-alt'></i> QoS: {{ code[25] }}</div>
                                       {% endif %}">
-                                    <i class="fas {% if code[7] == 'modbus' %}fa-network-wired{% else %}fa-broadcast-tower{% endif %}"></i>
-                                    {{ code[7]|upper }}
+                                            <i class="fas {% if code[8] == 'modbus' %}fa-network-wired{% else %}fa-broadcast-tower{% endif %}"></i>
+                                            {{ code[8]|upper }}
                                 </span>
                             </td>
-                            <td data-label="Limits">
-                                Upper: {{ code[25] }}<br>
-                                Lower: {{ code[26] }}
+                            <td data-label="Diagnostic Parameters">
+                                {% if code[28] %}
+                                    <small>
+                                        <strong>Start:</strong> {{ "%.2f"|format(code[31]) if code[31] is not none else 'N/A' }}<br>
+                                        <strong>Target:</strong> {{ "%.2f"|format(code[32]) if code[32] is not none else 'N/A' }}<br>
+                                        <strong>Threshold:</strong> {{ "%.2f"|format(code[33]) if code[33] is not none else 'N/A' }}<br>
+                                        <strong>Time:</strong> {{ code[34] if code[34] is not none else 'N/A' }}s<br>
+                                        <strong>Enabled:</strong> <span class="utc-to-local">{{ code[35].strftime('%Y-%m-%dT%H:%M:%S') if code[35] is not none else 'N/A' }}</span>
+                                    </small>
+                                {% else %}
+                                    <span class="text-muted">Not configured</span>
+                                {% endif %}
                             </td>
                             <td data-label="Status">
-                                <form action="/toggle_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm {% if code[27] %}btn-success{% else %}btn-secondary{% endif %}">
-                                        {% if code[27] %}Enabled{% else %}Disabled{% endif %}
+                                {% if code[28] %}
+                                    <button type="button" class="btn btn-sm btn-success disable-diagnostic-btn" 
+                                            data-code-id="{{ code[0] }}" data-code-name="{{ code[1] }}">
+                                        Enabled
                                     </button>
-                                </form>
+                                {% else %}
+                                    <button type="button" class="btn btn-sm btn-secondary enable-diagnostic-btn" 
+                                            data-code-id="{{ code[0] }}" data-source-type="{{ code[8] }}" data-code-name="{{ code[1] }}">
+                                        Disabled
+                                    </button>
+                                {% endif %}
                             </td>
                             <td data-label="Actions">
                                 <div class="btn-group-action">
@@ -181,115 +270,73 @@
                             </td>
                         </tr>
                         {% endfor %}
-                    {% else %}
-                        <tr>
-                            <td colspan="9" class="text-center">No temperature diagnostic codes found{% if search_query %} matching "{{ search_query }}"{% endif %}</td>
-                        </tr>
-                    {% endif %}
                 </tbody>
             </table>
             </div>
         </div>
-
-        <!-- Humidity Section -->
-        <div class="card shadow p-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h2 style="color: #003366;">Humidity Diagnostic Codes</h2>
-                <a href="/add_diagnostic_code?type=Humidity" class="btn btn-primary" style="background-color: #003366; border-color: #003366;">Add Code</a>
             </div>
-            <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Description</th>
-                        <th>State</th>
-                        <th>Last Failure</th>
-                        <th>History</th>
-                        <th>Data Source</th>
-                        <th>Limits</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if humidity_codes %}
-                        {% for code in humidity_codes %}
-                        <tr>
-                            <td data-label="Code">{{ code[1] }}</td>
-                            <td data-label="Description">{{ code[2] }}</td>
-                            <td data-label="State">{{ code[4] }}</td>
-                            <td data-label="Last Failure">{{ code[5] }}</td>
-                            <td data-label="History">{{ code[6] }}</td>
-                            <td data-label="Data Source">
-                                <span class="badge {% if code[7] == 'modbus' %}bg-primary{% else %}bg-success{% endif %}" 
-                                      data-bs-toggle="popover" 
-                                      data-bs-html="true"
-                                      data-bs-content="{% if code[7] == 'modbus' %}
-                                        <strong>Modbus Configuration</strong>
-                                        <div><i class='fas fa-network-wired'></i> IP: {{ code[8] }}</div>
-                                        <div><i class='fas fa-plug'></i> Port: {{ code[9] }}</div>
-                                        <div><i class='fas fa-microchip'></i> Unit ID: {{ code[10] }}</div>
-                                        <div><i class='fas fa-database'></i> Register: {{ code[11] }} ({{ code[12] }})</div>
-                                        <div><i class='fas fa-code'></i> Type: {{ code[13] }}</div>
-                                        <div><i class='fas fa-sort'></i> Order: {{ code[14] }}</div>
-                                        <div><i class='fas fa-calculator'></i> Scale: {{ code[15] }} {{ code[16] }}</div>
-                                        <div><i class='fas fa-plus-minus'></i> Offset: {{ code[17] }}</div>
-                                        <div><i class='fas fa-function'></i> Function: {{ code[18] }}</div>
-                                      {% else %}
-                                        <strong>MQTT Configuration</strong>
-                                        <div><i class='fas fa-server'></i> Broker: {{ code[19] }}</div>
-                                        <div><i class='fas fa-plug'></i> Port: {{ code[20] }}</div>
-                                        <div><i class='fas fa-broadcast-tower'></i> Topic: {{ code[21] }}</div>
-                                        <div><i class='fas fa-user'></i> Username: {{ code[22] or 'None' }}</div>
-                                        <div><i class='fas fa-shield-alt'></i> QoS: {{ code[24] }}</div>
-                                      {% endif %}">
-                                    <i class="fas {% if code[7] == 'modbus' %}fa-network-wired{% else %}fa-broadcast-tower{% endif %}"></i>
-                                    {{ code[7]|upper }}
-                                </span>
-                            </td>
-                            <td data-label="Limits">
-                                Upper: {{ code[25] }}<br>
-                                Lower: {{ code[26] }}
-                            </td>
-                            <td data-label="Status">
-                                <form action="/toggle_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                    <button type="submit" class="btn btn-sm {% if code[27] %}btn-success{% else %}btn-secondary{% endif %}">
-                                        {% if code[27] %}Enabled{% else %}Disabled{% endif %}
-                                    </button>
-                                </form>
-                            </td>
-                            <td data-label="Actions">
-                                <div class="btn-group-action">
-                                    <a href="/edit_diagnostic_code/{{ code[0] }}" class="btn btn-sm btn-warning" title="Edit">
-                                        <i class="fas fa-edit"></i> Edit
-                                    </a>
-                                    <form action="/duplicate_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                        <button type="submit" class="btn btn-sm btn-info" title="Duplicate">
-                                            <i class="fas fa-copy"></i> Duplicate
-                                        </button>
-                                    </form>
-                                    <form action="/reset_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                        <button type="submit" class="btn btn-sm btn-secondary" title="Reset" onclick="return confirm('Are you sure you want to reset this code?');">
-                                            <i class="fas fa-undo"></i> Reset
-                                        </button>
-                                    </form>
-                                    <form action="/delete_diagnostic_code/{{ code[0] }}" method="post" style="display:inline;">
-                                        <button type="submit" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Are you sure you want to delete this code?');">
-                                            <i class="fas fa-trash"></i> Delete
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
                         {% endfor %}
                     {% else %}
-                        <tr>
-                            <td colspan="9" class="text-center">No humidity diagnostic codes found{% if search_query %} matching "{{ search_query }}"{% endif %}</td>
-                        </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+            <div class="card shadow">
+                <div class="card-body text-center">
+                    <h4 style="color: #6c757d;">No diagnostic codes found{% if search_query %} matching "{{ search_query }}"{% endif %}</h4>
+                    <p class="text-muted">Get started by adding your first diagnostic code.</p>
+                    <div>
+                        <a href="/add_diagnostic_code?type=Temperature" class="btn btn-primary me-2">
+                            <i class="fas fa-plus"></i> Add Temperature Code
+                        </a>
+                        <a href="/add_diagnostic_code?type=Humidity" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Add Humidity Code
+                        </a>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Diagnostic Parameters Modal -->
+<div class="modal fade" id="diagnosticParamsModal" tabindex="-1" aria-labelledby="diagnosticParamsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="diagnosticParamsModalLabel">Enable Diagnostic Code</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="diagnosticParamsForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="start_value" class="form-label">Start Value</label>
+                            <div class="input-group">
+                                <input type="number" step="any" class="form-control" id="start_value" name="start_value" required>
+                                <button type="button" class="btn btn-outline-secondary" id="readLiveValueBtn" style="display: none;">
+                                    <i class="fas fa-sync-alt"></i> Read Live
+                                </button>
+                            </div>
+                            <div class="form-text" id="startValueHelp">Current value from the sensor</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="target_value" class="form-label">Target Value</label>
+                            <input type="number" step="any" class="form-control" id="target_value" name="target_value" required>
+                            <div class="form-text">The desired value to achieve</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="threshold" class="form-label">Threshold</label>
+                            <input type="number" step="any" class="form-control" id="threshold" name="threshold" required>
+                            <div class="form-text">Acceptable deviation from target value</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="time_to_achieve" class="form-label">Time to Achieve (seconds)</label>
+                            <input type="number" class="form-control" id="time_to_achieve" name="time_to_achieve" required min="1">
+                            <div class="form-text">Time allowed to reach target value</div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="enableDiagnosticBtn">Enable Diagnostic</button>
             </div>
         </div>
     </div>
@@ -308,6 +355,159 @@ document.addEventListener('DOMContentLoaded', function() {
             sanitize: false
         })
     })
+    
+    // Diagnostic parameters modal functionality
+    let currentCodeId = null;
+    let currentDataSourceType = null;
+    
+    // Handle enable button clicks
+    document.querySelectorAll('.enable-diagnostic-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const codeId = this.getAttribute('data-code-id');
+            const dataSourceType = this.getAttribute('data-source-type');
+            const codeName = this.getAttribute('data-code-name');
+            
+            currentCodeId = codeId;
+            currentDataSourceType = dataSourceType;
+            
+            // Update modal title
+            document.getElementById('diagnosticParamsModalLabel').textContent = `Enable Diagnostic Code: ${codeName}`;
+            
+            // Show/hide read live button based on data source type
+            const readLiveBtn = document.getElementById('readLiveValueBtn');
+            if (dataSourceType === 'modbus') {
+                readLiveBtn.style.display = 'block';
+                readLiveBtn.onclick = function() {
+                    readLiveModbusValue(codeId);
+                };
+            } else {
+                readLiveBtn.style.display = 'none';
+            }
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('diagnosticParamsModal'));
+            modal.show();
+        });
+    });
+    
+    // Handle disable button clicks
+    document.querySelectorAll('.disable-diagnostic-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to disable this diagnostic code? This will clear all diagnostic parameters.')) {
+                const codeId = this.getAttribute('data-code-id');
+                disableDiagnosticCode(codeId);
+            }
+        });
+    });
+    
+    // Handle enable diagnostic button in modal
+    document.getElementById('enableDiagnosticBtn').addEventListener('click', function() {
+        if (currentCodeId) {
+            enableDiagnosticCode(currentCodeId);
+        }
+    });
+    
+    function readLiveModbusValue(codeId) {
+        const btn = document.getElementById('readLiveValueBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reading...';
+        btn.disabled = true;
+        
+        fetch(`/api/read_live_modbus/${codeId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('start_value').value = data.value;
+                const units = data.units ? ` ${data.units}` : '';
+                document.getElementById('startValueHelp').textContent = `Current value: ${data.value}${units}`;
+            } else {
+                alert('Error reading live value: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error reading live value. Please check your connection.');
+        })
+        .finally(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    }
+    
+    function enableDiagnosticCode(codeId) {
+        const form = document.getElementById('diagnosticParamsForm');
+        const formData = new FormData(form);
+        
+        const data = {
+            start_value: parseFloat(formData.get('start_value')),
+            target_value: parseFloat(formData.get('target_value')),
+            threshold: parseFloat(formData.get('threshold')),
+            time_to_achieve: parseInt(formData.get('time_to_achieve'))
+        };
+        
+        fetch(`/api/update_diagnostic_params/${codeId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Close modal and reload page
+                const modal = bootstrap.Modal.getInstance(document.getElementById('diagnosticParamsModal'));
+                modal.hide();
+                location.reload();
+            } else {
+                alert('Error enabling diagnostic code: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error enabling diagnostic code. Please try again.');
+        });
+    }
+    
+    function disableDiagnosticCode(codeId) {
+        fetch(`/api/clear_diagnostic_params/${codeId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error disabling diagnostic code: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error disabling diagnostic code. Please try again.');
+        });
+    }
+});
+
+function shiftUTCToLocal(utcString) {
+    if (!utcString || utcString === 'N/A') return utcString;
+    const date = new Date(utcString + 'Z');
+    if (isNaN(date)) return utcString;
+    return date.toLocaleString(); // Let browser handle local time zone
+}
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.utc-to-local').forEach(function(el) {
+        el.textContent = shiftUTCToLocal(el.textContent.trim());
+    });
 });
 </script>
 {% endblock %} 

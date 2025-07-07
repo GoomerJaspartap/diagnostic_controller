@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}Add Room - Diagnostic Controller{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header">
+                <h3 style="color: #003366; margin: 0;">Add New Chamber</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Chamber Name *</label>
+                        <input type="text" class="form-control" id="name" name="name" required 
+                               placeholder="Enter chamber name (e.g., Lab 101, Control Room)">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3" 
+                                  placeholder="Enter chamber description (optional)"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="refresh_time" class="form-label">Modbus Refresh Time (seconds)</label>
+                        <input type="number" class="form-control" id="refresh_time" name="refresh_time" min="1" placeholder="Leave blank for default">
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('rooms') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Chambers
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> Add Chamber
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

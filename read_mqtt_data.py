@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 import psycopg2
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 import json
@@ -25,6 +25,56 @@ DB_CONFIG = {
     'port': os.getenv('DB_PORT')
 }
 
+def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
+                                    threshold, start_value, target_value, current_value):
+    """
+    Checks if current_value at current_time is within threshold of expected value on linear ramp.
+    
+    Params:
+    - start_time: datetime.datetime — enabled time
+    - time_to_achieve:  — duration in seconds to reach target
+    - current_time: datetime.datetime —time when data is received
+    - threshold: float — max deviation allowed
+    - start_value: float — initial value at start_time
+    - target_value: float — final target value
+    - current_value: float — data received. 
+    
+    Returns:
+    - (bool, float): (True if in bounds, expected_value)
+    """
+    # Convert datetime objects to seconds for calculation
+    start_time_seconds = start_time.timestamp()
+    current_time_seconds = current_time.timestamp()
+    
+    # Calculate slope and intercept (matching trial.py logic)
+    m = (target_value - start_value) / time_to_achieve
+    b = start_value - m * start_time_seconds
+    
+    # Calculate expected value
+    print(f"[DEBUG] Time calculations: start_time_seconds={start_time_seconds}, current_time_seconds={current_time_seconds}, time_to_achieve={time_to_achieve}")
+    print(f"[DEBUG] Slope calculations: m={m}, b={b}")
+    
+    if current_time_seconds < start_time_seconds:
+        expected_value = start_value
+        print(f"[DEBUG] Before start time, using start_value: {expected_value}")
+    elif current_time_seconds >= start_time_seconds + time_to_achieve:
+        expected_value = target_value
+        print(f"[DEBUG] After end time, using target_value: {expected_value}")
+    else:
+        expected_value = m * current_time_seconds + b
+        print(f"[DEBUG] During ramp, calculated: {expected_value}")
+    
+    # Clamp expected value to bounds
+    expected_value = max(min(expected_value, target_value), start_value)
+    print(f"[DEBUG] After clamping: {expected_value}")
+
+    # Check if current value is within bounds
+    deviation = abs(current_value - expected_value)
+    in_bounds = deviation <= threshold and current_value <= target_value
+    print(f"[DEBUG] Final check: deviation={deviation}, threshold={threshold}, current_value={current_value}, target_value={target_value}, in_bounds={in_bounds}")
+
+    return in_bounds, expected_value
+
 def init_db():
     """Initialize database connection"""
     logging.debug(f"Connecting to database with config: {DB_CONFIG}")
@@ -37,7 +87,7 @@ def get_active_mqtt_diagnostics():
     c.execute('''
         SELECT id, code, description, type, mqtt_broker, mqtt_port, 
                mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
-               upper_limit, lower_limit
+               start_value, target_value, threshold, time_to_achieve, enabled_at
         FROM diagnostic_codes 
         WHERE enabled = 1 AND data_source_type = 'mqtt'
     ''')
@@ -67,7 +117,7 @@ def on_message(client, userdata, msg):
         conn = init_db()
         c = conn.cursor()
         c.execute('''
-            SELECT id, code, description, type, upper_limit, lower_limit, state
+            SELECT id, code, description, type, start_value, target_value, threshold, state
             FROM diagnostic_codes 
             WHERE mqtt_topic = %s AND enabled = 1 AND data_source_type = 'mqtt'
         ''', (msg.topic,))
@@ -109,29 +159,105 @@ def on_message(client, userdata, msg):
             print(f"[DEBUG] Error parsing payload: {str(e)}")
             value = None
 
-        # Check limits and update status
+        # After value is parsed and before updating status/logs:
+        if value is not None:
+            conn_data = init_db()
+            c_data = conn_data.cursor()
+            c_data.execute('INSERT INTO data_logs (code, value, data_source) VALUES (%s, %s, %s)', (diagnostic[1], value, 'mqtt'))
+            conn_data.commit()
+            conn_data.close()
+
+        # Check limits and update status using real-time strategy
         if value is None:
             status = "No Status"
         else:
             try:
                 value_float = float(value)
-                upper_limit = float(diagnostic[4]) if diagnostic[4] is not None else float('inf')
-                lower_limit = float(diagnostic[5]) if diagnostic[5] is not None else float('-inf')
-                if value_float > upper_limit or value_float < lower_limit:
-                    status = "Fail"
+                start_value = diagnostic[10]  # start_value
+                target_value = diagnostic[11]  # target_value
+                threshold = diagnostic[12]  # threshold
+                time_to_achieve = diagnostic[13]  # time_to_achieve
+                
+                if start_value is None or target_value is None or threshold is None or time_to_achieve is None:
+                    status = "No Status"
                 else:
-                    status = "Pass"
+                    # Get the enabled time from the database
+                    c.execute('SELECT enabled_at FROM diagnostic_codes WHERE id = %s', (diagnostic[0],))
+                    enabled_time_result = c.fetchone()
+                    
+                    if enabled_time_result and enabled_time_result[0]:
+                        try:
+                            # Handle different types of enabled_time
+                            enabled_time = enabled_time_result[0]
+                            if isinstance(enabled_time, str):
+                                enabled_time = datetime.fromisoformat(enabled_time)
+                            elif isinstance(enabled_time, (int, float)):
+                                # enabled_at should be the actual timestamp, not a relative offset
+                                # If it's a small number, it's likely an old/invalid value
+                                if enabled_time < 1000000:  # Less than ~11 days in seconds
+                                    print(f"[DEBUG] Warning: enabled_at={enabled_time} appears to be invalid. Using current time as fallback.")
+                                    enabled_time = datetime.now()
+                                else:
+                                    # Assume it's a Unix timestamp in seconds
+                                    enabled_time = datetime.fromtimestamp(enabled_time)
+                            # else: assume it's already a datetime object
+                            
+                            # Use UTC time consistently to match the database timestamps
+                            current_time = datetime.utcnow()
+                            
+                            # Use the new real-time diagnostic strategy
+                            print(f"[DEBUG] Time info: enabled_time={enabled_time}, time_to_achieve={time_to_achieve}, current_time={current_time}")
+                            print(f"[DEBUG] Value info: start_value={start_value}, target_value={target_value}, current_value={value_float}, threshold={threshold}")
+                            
+                            in_bounds, expected_value = is_value_within_bounds_realtime(
+                                enabled_time, time_to_achieve, current_time,
+                                threshold, start_value, target_value, value_float
+                            )
+                            
+                            if in_bounds:
+                                status = "Pass"
+                            else:
+                                status = "Fail"
+                                
+                            print(f"[DEBUG] Real-time check for {diagnostic[1]}: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
+                            
+                        except Exception as e:
+                            print(f"[DEBUG] Error in real-time calculation: {str(e)}")
+                            status = "No Status"
+                    else:
+                        # Fallback to simple threshold check if no enabled time
+                        # Use the same logic as trial.py but without time-based calculation
+                        deviation = abs(value_float - target_value)
+                        if deviation <= threshold and value_float <= target_value:
+                            status = "Pass"
+                        else:
+                            status = "Fail"
             except (ValueError, TypeError) as e:
                 print(f"[DEBUG] Error comparing values: {str(e)}")
                 status = "No Status"
 
         print(f"[DEBUG] Status for {diagnostic[1]}: {status}")
 
+        # Always log to logs for 'Fail' and 'No Status'
+        if status in ('Fail', 'No Status'):
+            now_str = format_datetime(datetime.now())
+            c.execute('''
+                INSERT INTO logs (code, description, state, last_failure, history_count, type, value)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                diagnostic[1],
+                diagnostic[2],
+                status,
+                now_str,
+                1,
+                diagnostic[3],
+                value
+            ))
+
         # Only update if status has changed or it's the first reading
-        current_state = diagnostic[6]  # Get current state from database
-        now_str = format_datetime(datetime.now())
-        
+        current_state = diagnostic[7]  # Get current state from database
         if current_state != status or current_state == "No Status":
+            now_str = format_datetime(datetime.now())
             if status in ('Fail', 'No Status'):
                 c.execute('''
                     UPDATE diagnostic_codes 
@@ -143,20 +269,6 @@ def on_message(client, userdata, msg):
                     WHERE id = %s
                 ''', (status, value, now_str, now_str, diagnostic[0]))
                 
-                # Log the failure
-                c.execute('''
-                    INSERT INTO logs (code, description, state, last_failure, history_count, type, value)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ''', (
-                    diagnostic[1],
-                    diagnostic[2],
-                    status,
-                    now_str,
-                    1,
-                    diagnostic[3],
-                    value
-                ))
-                
                 # Send alert
                 emails, phone_numbers = get_contacts()
                 subject = "Fault Detected"
@@ -165,7 +277,7 @@ def on_message(client, userdata, msg):
                 refresh_time = get_refresh_time()
                 # Fetch latest diagnostic details for accurate alert data
                 c.execute('''
-                    SELECT code, description, type, state, current_value, last_read_time, last_failure, history_count
+                    SELECT code, description, type, state, current_value, last_read_time, last_failure, history_count, start_value, target_value, threshold, time_to_achieve, enabled_at
                     FROM diagnostic_codes WHERE id = %s
                 ''', (diagnostic[0],))
                 row = c.fetchone()
@@ -178,7 +290,12 @@ def on_message(client, userdata, msg):
                         'value': row[4],
                         'last_read_time': row[5],
                         'last_failure': row[6],
-                        'history_count': row[7]
+                        'history_count': row[7],
+                        'start_value': row[8],
+                        'target_value': row[9],
+                        'threshold': row[10],
+                        'time_to_achieve': row[11],
+                        'enabled_at': row[12]
                     }]
                     send_alert(emails, phone_numbers, subject, message, alert_data, current_time, refresh_time)
             else:

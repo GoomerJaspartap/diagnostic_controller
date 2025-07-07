@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Data Log - Diagnostic Controller{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4" style="color: #003366;">Data Log</h2>
+    <form id="filter-form" class="row g-3 mb-3">
+        <div class="col-md-2">
+            <input type="text" class="form-control" name="code" placeholder="Code">
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" name="data_source">
+                <option value="">All Sources</option>
+                <option value="modbus">Modbus</option>
+                <option value="mqtt">MQTT</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary">Filter</button>
+        </div>
+    </form>
+    <div class="table-responsive">
+        <table class="table table-striped" id="data-log-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Code</th>
+                    <th>Value</th>
+                    <th>Data Source</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+<script>
+function fetchDataLog() {
+    const form = document.getElementById('filter-form');
+    const params = new URLSearchParams(new FormData(form)).toString();
+    fetch('/api/data_log?' + params)
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.querySelector('#data-log-table tbody');
+            if (data.logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center">No data log entries found.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            data.logs.forEach(log => {
+                tbody.innerHTML += `<tr>
+                    <td data-label="Time"><span class="utc-to-local">${log.event_time}</span></td>
+                    <td data-label="Code">${log.code}</td>
+                    <td data-label="Value">${log.value !== null ? log.value : ''}</td>
+                    <td data-label="Data Source">${log.data_source || ''}</td>
+                </tr>`;
+            });
+        });
+}
+document.getElementById('filter-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    fetchDataLog();
+});
+function shiftUTCToLocal(utcString) {
+    if (!utcString || utcString === 'N/A') return utcString;
+    let date;
+    if (utcString.includes('T')) {
+        date = new Date(utcString);
+    } else {
+        // If it's in 'YYYY-MM-DD HH:MM:SS' format, treat as local
+        date = new Date(utcString.replace(' ', 'T'));
+    }
+    if (isNaN(date)) return utcString;
+    return date.toLocaleString();
+}
+document.addEventListener('DOMContentLoaded', function() {
+    fetchDataLog();
+    // After data is loaded, convert all .utc-to-local
+    setTimeout(function() {
+        document.querySelectorAll('.utc-to-local').forEach(function(el) {
+            el.textContent = shiftUTCToLocal(el.textContent.trim());
+        });
+    }, 300);
+});
+</script>
+{% endblock %} 

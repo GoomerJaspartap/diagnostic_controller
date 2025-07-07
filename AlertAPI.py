@@ -4,6 +4,7 @@ import psycopg2
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from datetime import timedelta
 
 # Load environment variables
 load_dotenv()
@@ -31,7 +32,7 @@ def format_datetime(dt):
         return ''
     if isinstance(dt, str):
         try:
-            dt = datetime.datetime.fromisoformat(dt)
+            dt = datetime.fromisoformat(dt)
         except Exception:
             return dt
     return dt.strftime('%d %B, %Y %H:%M:%S')
@@ -43,26 +44,54 @@ def send_alert(emails, phone_numbers, subject, message, table_data, current_time
     
     # Get current time if not provided
     if current_time is None:
-        current_time = format_datetime(datetime.datetime.now())
+        current_time = format_datetime(datetime.now())
     else:
         current_time = format_datetime(current_time)
     
-    # Group diagnostics by type
+    # Group diagnostics by room_name
     grouped_data = {}
     for row in table_data:
-        if row['type'] not in grouped_data:
-            grouped_data[row['type']] = []
-        grouped_data[row['type']].append(row)
+        room = row.get('room_name', 'Unassigned')
+        if room not in grouped_data:
+            grouped_data[room] = []
+        grouped_data[room].append(row)
     
-    # Create separate text messages for each type
+    # Create more detailed text messages for each room
     text = f"{message}\n\n"
     text += f"Last Read Time: {current_time}\n"
     text += f"Refresh Time: {refresh_time} seconds\n\n"
-    
-    for dtype, diagnostics in grouped_data.items():
-        text += f"{dtype} Diagnostics:\n"
+    for room, diagnostics in grouped_data.items():
+        text += f"Room: {room}\n"
         for row in diagnostics:
-            text += f"{row['code']} - {row['description']} {row['state']} {row['last_failure']} (History: {row['history_count']})\n"
+            enabled_at = row.get('enabled_at', 'N/A')
+            if enabled_at and enabled_at != 'N/A':
+                try:
+                    if isinstance(enabled_at, str):
+                        from datetime import datetime
+                        enabled_at_dt = datetime.fromisoformat(enabled_at)
+                    else:
+                        enabled_at_dt = enabled_at
+                    enabled_at_shifted = (enabled_at_dt - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    enabled_at_shifted = enabled_at
+            else:
+                enabled_at_shifted = 'N/A'
+            text += (
+                f"Code: {row.get('code', '')}\n"
+                f"Description: {row.get('description', '')}\n"
+                f"Type: {row.get('type', '')}\n"
+                f"State: {row.get('state', '')}\n"
+                f"Current Value: {row.get('value', 'N/A')}\n"
+                f"Start Value: {row.get('start_value', 'N/A')}\n"
+                f"Target Value: {row.get('target_value', 'N/A')}\n"
+                f"Threshold: {row.get('threshold', 'N/A')}\n"
+                f"Time to Achieve: {row.get('time_to_achieve', 'N/A')}\n"
+                f"Enabled At: {enabled_at_shifted}\n"
+                f"Last Read Time: {row.get('last_read_time', 'N/A')}\n"
+                f"Last Failure: {row.get('last_failure', 'N/A')}\n"
+                f"History: {row.get('history_count', 'N/A')}\n"
+                "-----------------------------\n"
+            )
         text += "\n"
     
     # Send emails
@@ -78,7 +107,7 @@ def send_alert(emails, phone_numbers, subject, message, table_data, current_time
             sid = send_message(number, text)
             print(f"[ALERT LOG] Message sent to {number} with SID: {sid}")
         except Exception as e:
-            print(f"[ALERT LOG] Failed to send SMS to {number}: {e}") 
+            print(f"[ALERT LOG] Failed to send SMS to {number}: {e}")
 
 def get_contacts():
     conn = psycopg2.connect(**DB_CONFIG)
