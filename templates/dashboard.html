@@ -446,6 +446,12 @@ document.getElementById('resetHistoryBtn').addEventListener('click', function() 
 // Update every second
 setInterval(updateDiagnostics, 1000);
 
+// Global variables for auto-updating graph
+let currentGraphCode = null;
+let currentGraphModal = null;
+let graphUpdateInterval = null;
+let lastGraphData = null;
+
 // Graph functionality
 function showDiagnosticGraph(code, description) {
     // Create modal
@@ -462,6 +468,7 @@ function showDiagnosticGraph(code, description) {
                 <div class="modal-header">
                     <h5 class="modal-title" id="graphModalLabel">Diagnostic Graph: ${code} - ${description}</h5>
                     <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="fullscreenGraphBtn" title="Fullscreen"><i class="fas fa-expand"></i></button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="autoUpdateToggleBtn" title="Auto Update"><i class="fas fa-sync-alt"></i></button>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -481,8 +488,15 @@ function showDiagnosticGraph(code, description) {
     const modalInstance = new bootstrap.Modal(modal);
     modalInstance.show();
     
+    // Store current graph info for auto-updating
+    currentGraphCode = code;
+    currentGraphModal = modal;
+    
     // Load graph data
     loadGraphData(code, modal);
+    
+    // Start auto-updating
+    startGraphAutoUpdate();
     
     // Fullscreen button functionality
     modal.querySelector('#fullscreenGraphBtn').onclick = function() {
@@ -494,10 +508,77 @@ function showDiagnosticGraph(code, description) {
         }
     };
     
+    // Auto-update toggle button functionality
+    const autoUpdateBtn = modal.querySelector('#autoUpdateToggleBtn');
+    // Start with auto-update active
+    autoUpdateBtn.innerHTML = '<i class="fas fa-stop"></i>';
+    autoUpdateBtn.title = 'Stop Auto Update';
+    autoUpdateBtn.classList.remove('btn-outline-secondary');
+    autoUpdateBtn.classList.add('btn-success');
+    
+    autoUpdateBtn.onclick = function() {
+        if (graphUpdateInterval) {
+            stopGraphAutoUpdate();
+            autoUpdateBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+            autoUpdateBtn.title = 'Auto Update';
+            autoUpdateBtn.classList.remove('btn-success');
+            autoUpdateBtn.classList.add('btn-outline-secondary');
+        } else {
+            startGraphAutoUpdate();
+            autoUpdateBtn.innerHTML = '<i class="fas fa-stop"></i>';
+            autoUpdateBtn.title = 'Stop Auto Update';
+            autoUpdateBtn.classList.remove('btn-outline-secondary');
+            autoUpdateBtn.classList.add('btn-success');
+        }
+    };
+    
     // Clean up modal when hidden
     modal.addEventListener('hidden.bs.modal', function() {
+        stopGraphAutoUpdate();
+        currentGraphCode = null;
+        currentGraphModal = null;
+        lastGraphData = null;
         document.body.removeChild(modal);
     });
+}
+
+function startGraphAutoUpdate() {
+    if (graphUpdateInterval) {
+        clearInterval(graphUpdateInterval);
+    }
+    // Update every 2 seconds
+    graphUpdateInterval = setInterval(() => {
+        if (currentGraphCode && currentGraphModal) {
+            updateGraphData();
+        }
+    }, 2000);
+}
+
+function stopGraphAutoUpdate() {
+    if (graphUpdateInterval) {
+        clearInterval(graphUpdateInterval);
+        graphUpdateInterval = null;
+    }
+}
+
+function updateGraphData() {
+    if (!currentGraphCode || !currentGraphModal) return;
+    
+    console.log('Updating graph data for:', currentGraphCode);
+    
+    fetch(`/api/diagnostic_graph/${currentGraphCode}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('Graph data response:', data);
+            if (data.success) {
+                updateGraphWithNewData(data.data);
+            } else {
+                console.log('Graph data error:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error updating graph data:', error);
+        });
 }
 
 function loadGraphData(code, modal) {
@@ -555,7 +636,10 @@ function toLocalISOString(date) {
 function createGraph(data, modal) {
     const container = document.getElementById('graphContainer');
     
-    if (!data.start_value || !data.target_value || !data.time_to_achieve || !data.enabled_time) {
+    if (data.start_value === null || data.start_value === undefined || 
+        data.target_value === null || data.target_value === undefined || 
+        data.time_to_achieve === null || data.time_to_achieve === undefined || 
+        data.enabled_time === null || data.enabled_time === undefined) {
         container.innerHTML = `
             <div class="alert alert-info">
                 <i class="fas fa-info-circle"></i>
@@ -743,6 +827,42 @@ function createGraph(data, modal) {
     };
     // Use Plotly.react for smooth updates
     Plotly.react(container, traces, layout, config);
+    
+    // Store the data for incremental updates
+    lastGraphData = data;
+}
+
+function updateGraphWithNewData(newData) {
+    if (!lastGraphData || !currentGraphModal) return;
+    
+    const container = document.getElementById('graphContainer');
+    if (!container) return;
+    
+    // Find new data points that weren't in the previous data
+    const existingTimestamps = new Set(lastGraphData.data_points.map(p => p.timestamp));
+    const newPoints = newData.data_points.filter(p => !existingTimestamps.has(p.timestamp));
+    
+    console.log('New points found:', newPoints.length);
+    console.log('Total points in new data:', newData.data_points.length);
+    console.log('Total points in last data:', lastGraphData.data_points.length);
+    
+    if (newPoints.length === 0) {
+        // No new points, just update the "Now" line
+        updateNowLine(newData);
+        return;
+    }
+    
+    // For now, let's just recreate the entire graph with new data
+    // This is simpler and more reliable
+    createGraph(newData, currentGraphModal);
+    
+    // Store updated data
+    lastGraphData = newData;
+}
+
+function updateNowLine(newData) {
+    // For now, this will be handled by the full graph recreation
+    console.log('updateNowLine called');
 }
 </script>
 {% endblock %} 

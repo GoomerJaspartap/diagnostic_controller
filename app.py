@@ -1333,9 +1333,6 @@ def diagnostic_graph(code):
         
         start_value, target_value, threshold, time_to_achieve, enabled_at = diagnostic
         
-        if not all([start_value, target_value, threshold, time_to_achieve, enabled_at]):
-            return jsonify({'success': False, 'error': 'Diagnostic parameters not fully configured'})
-        
         # Get data points from data_logs
         c.execute('''
             SELECT value, event_time 
