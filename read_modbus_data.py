@@ -203,18 +203,7 @@ def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
                                     threshold, start_value, target_value, current_value):
     """
     Checks if current_value at current_time is within threshold of expected value on linear ramp.
-    
-    Params:
-    - start_time: datetime.datetime — enabled time
-    - time_to_achieve:  — duration in seconds to reach target
-    - current_time: datetime.datetime —time when data is received
-    - threshold: float — max deviation allowed
-    - start_value: float — initial value at start_time
-    - target_value: float — final target value
-    - current_value: float — data received. 
-    
-    Returns:
-    - (bool, float): (True if in bounds, expected_value)
+    Works for both positive and negative slopes.
     """
     # Convert datetime objects to seconds for calculation
     start_time_seconds = start_time.timestamp()
@@ -225,28 +214,25 @@ def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
     b = start_value - m * start_time_seconds
     
     # Calculate expected value
-    print(f"[DEBUG] Time calculations: start_time_seconds={start_time_seconds}, current_time_seconds={current_time_seconds}, time_to_achieve={time_to_achieve}")
-    print(f"[DEBUG] Slope calculations: m={m}, b={b}")
-    
     if current_time_seconds < start_time_seconds:
         expected_value = start_value
-        print(f"[DEBUG] Before start time, using start_value: {expected_value}")
     elif current_time_seconds >= start_time_seconds + time_to_achieve:
         expected_value = target_value
-        print(f"[DEBUG] After end time, using target_value: {expected_value}")
     else:
         expected_value = m * current_time_seconds + b
-        print(f"[DEBUG] During ramp, calculated: {expected_value}")
     
-    # Clamp expected value to bounds
-    expected_value = max(min(expected_value, target_value), start_value)
-    print(f"[DEBUG] After clamping: {expected_value}")
-
+    # Clamp expected value to bounds (works for both positive and negative slope)
+    min_bound = min(start_value, target_value)
+    max_bound = max(start_value, target_value)
+    expected_value = max(min(expected_value, max_bound), min_bound)
+    
     # Check if current value is within bounds
     deviation = abs(current_value - expected_value)
-    in_bounds = deviation <= threshold and current_value <= target_value
-    print(f"[DEBUG] Final check: deviation={deviation}, threshold={threshold}, current_value={current_value}, target_value={target_value}, in_bounds={in_bounds}")
-
+    if start_value < target_value:
+        in_bounds = deviation <= threshold and current_value <= target_value
+    else:
+        in_bounds = deviation <= threshold and current_value >= target_value
+    
     return in_bounds, expected_value
 
 def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None):

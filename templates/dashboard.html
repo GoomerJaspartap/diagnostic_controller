@@ -699,11 +699,10 @@ function createGraph(data, modal) {
         } else {
             expectedValue = m * currentTimeSeconds + b;
         }
-        // Clamp expected value to bounds (matching trial.py)
-        expectedValue = Math.max(Math.min(expectedValue, data.target_value), data.start_value);
+        // Clamp expected value to bounds (works for both positive and negative slope)
+        expectedValue = Math.max(Math.min(expectedValue, maxBound), minBound);
         expectedValues.push(expectedValue);
-        // Calculate threshold lines (matching trial.py)
-        // After diagnostic duration, maintain constant threshold around target value
+        // Calculate threshold lines (works for both positive and negative slope)
         const upper = Math.min(expectedValue + data.threshold, maxBound);
         const lower = Math.max(expectedValue - data.threshold, minBound);
         upperThreshold.push(upper);
@@ -732,10 +731,16 @@ function createGraph(data, modal) {
                 } else {
                     expectedValue = m * currentTimeSeconds + b;
                 }
-                // Clamp expected value to bounds (matching trial.py)
-                expectedValue = Math.max(Math.min(expectedValue, data.target_value), data.start_value);
+                // Clamp expected value to bounds (works for both positive and negative slope)
+                expectedValue = Math.max(Math.min(expectedValue, maxBound), minBound);
                 const deviation = Math.abs(point.value - expectedValue);
-                const inBounds = deviation <= data.threshold && point.value <= data.target_value;
+                // Pass/fail logic for both positive and negative slope
+                let inBounds;
+                if (data.start_value < data.target_value) {
+                    inBounds = deviation <= data.threshold && point.value <= data.target_value;
+                } else {
+                    inBounds = deviation <= data.threshold && point.value >= data.target_value;
+                }
                 actualColors.push(inBounds ? 'green' : 'red');
                 actualTooltips.push(`Value: ${point.value}<br>Time: ${ptTime.toLocaleString()}<br>Expected: ${expectedValue.toFixed(2)}<br>Status: ${inBounds ? 'Pass' : 'Fail'}`);
             }
