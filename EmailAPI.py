@@ -82,6 +82,7 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Description</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Type</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">State</th>
+                        <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Fault Type</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Current Value</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Start Value</th>
                         <th style=\"padding: 13px 8px; border-right: 1px solid #e0e6ed; text-align: left; font-weight: 600;\">Target Value</th>
@@ -119,6 +120,9 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
                         <td style=\"padding: 11px 8px;\">{row['type']}</td>
                         <td style=\"padding: 11px 8px;\">
                             <span style=\"display: inline-block; min-width: 54px; padding: 2px 10px; border-radius: 12px; background: {state_bg}; color: {state_color}; font-weight: 600; font-size: 14px; text-align: center;\">{row['state']}</span>
+                        </td>
+                        <td style=\"padding: 11px 8px;\">
+                            <span style=\"display: inline-block; padding: 2px 8px; border-radius: 8px; background: {state_bg}; color: {state_color}; font-weight: 600; font-size: 12px; text-align: center;\">{row.get('fault_type', 'N/A')}</span>
                         </td>
                         <td style=\"padding: 11px 8px;\">{row.get('value', 'N/A')}</td>
                         <td style=\"padding: 11px 8px;\">{row.get('start_value', 'N/A')}</td>
@@ -205,6 +209,7 @@ def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Description</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Type</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>State</th>
+                            <th style='padding:10px; border:1px solid #e0e6ed;'>Fault Type</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Value</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Last Read Time</th>
                             <th style='padding:10px; border:1px solid #e0e6ed;'>Last Failure</th>
@@ -220,6 +225,7 @@ def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row['description']}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row['type']}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed; color:{state_color}; font-weight:bold;'>{row['state']}</td>
+                            <td style='padding:8px; border:1px solid #e0e6ed; color:{state_color}; font-weight:bold;'>{row.get('fault_type', 'N/A')}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row.get('value', 'N/A')}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row.get('last_read_time', 'N/A')}</td>
                             <td style='padding:8px; border:1px solid #e0e6ed;'>{row['last_failure']}</td>

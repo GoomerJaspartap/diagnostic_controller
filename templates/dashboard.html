@@ -89,6 +89,7 @@
                             <th>Description</th>
                             <th>Current Value</th>
                             <th>State</th>
+                            <th>Fault Type</th>
                             <th>Last Failure</th>
                             <th>History</th>
                             <th>Last Read</th>
@@ -102,6 +103,7 @@
                             <td data-label="Description">{{ code[1] }}</td>
                             <td data-label="Current Value">{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] or '' }}</td>
                             <td data-label="State"><strong style="{% if code[2] == 'Pass' %}color: #28a745;{% elif code[2] == 'Fail' %}color: #dc3545;{% else %}color: #ffc107;{% endif %}">{{ code[2] }}</strong></td>
+                            <td data-label="Fault Type">{% if code[2] == 'Fail' and code[11] %}{% if 'Over' in code[11] %}<span class="badge bg-danger"><i class="fas fa-arrow-up me-1"></i>{{ code[11] }}</span>{% elif 'Under' in code[11] %}<span class="badge bg-danger"><i class="fas fa-arrow-down me-1"></i>{{ code[11] }}</span>{% else %}<span class="badge bg-danger">{{ code[11] }}</span>{% endif %}{% elif code[2] == 'Pass' %}<span class="badge bg-success">Pass</span>{% else %}<span class="badge bg-secondary">N/A</span>{% endif %}</td>
                             <td data-label="Last Failure">{{ code[3] }}</td>
                             <td data-label="History">{{ code[4] }}</td>
                             <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
@@ -130,6 +132,7 @@
                             <th>Description</th>
                             <th>Current Value</th>
                             <th>State</th>
+                            <th>Fault Type</th>
                             <th>Last Failure</th>
                             <th>History</th>
                             <th>Last Read</th>
@@ -143,6 +146,7 @@
                             <td data-label="Description">{{ code[1] }}</td>
                             <td data-label="Current Value">{{ code[7] if code[7] is not none else 'N/A' }} {{ code[6] or '' }}</td>
                             <td data-label="State"><strong style="{% if code[2] == 'Pass' %}color: #28a745;{% elif code[2] == 'Fail' %}color: #dc3545;{% else %}color: #ffc107;{% endif %}">{{ code[2] }}</strong></td>
+                            <td data-label="Fault Type">{% if code[2] == 'Fail' and code[11] %}{% if 'Over' in code[11] %}<span class="badge bg-danger"><i class="fas fa-arrow-up me-1"></i>{{ code[11] }}</span>{% elif 'Under' in code[11] %}<span class="badge bg-danger"><i class="fas fa-arrow-down me-1"></i>{{ code[11] }}</span>{% else %}<span class="badge bg-danger">{{ code[11] }}</span>{% endif %}{% elif code[2] == 'Pass' %}<span class="badge bg-success">Pass</span>{% else %}<span class="badge bg-secondary">N/A</span>{% endif %}</td>
                             <td data-label="Last Failure">{{ code[3] }}</td>
                             <td data-label="History">{{ code[4] }}</td>
                             <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
@@ -270,6 +274,7 @@ function updateDiagnostics() {
                                         <th>Description</th>
                                         <th>Current Value</th>
                                         <th>State</th>
+                                        <th>Fault Type</th>
                                         <th>Last Failure</th>
                                         <th>History</th>
                                         <th>Last Read</th>
@@ -282,12 +287,29 @@ function updateDiagnostics() {
                     chamberData.temp.forEach(code => {
                         const bgColor = code[2] === 'Pass' ? '#d4edda' : code[2] === 'Fail' ? '#f44336' : '#ffe066';
                         const textColor = code[2] === 'Pass' ? '#28a745' : code[2] === 'Fail' ? '#dc3545' : '#ffc107';
+                        const faultType = code[2] === 'Fail' && code[11] ? code[11] : code[2] === 'Pass' ? 'Pass' : 'N/A';
+                        const faultTypeClass = code[2] === 'Fail' && code[11] ? 'bg-danger' : code[2] === 'Pass' ? 'bg-success' : 'bg-secondary';
+                        let faultTypeHtml = '';
+                        if (code[2] === 'Fail' && code[11]) {
+                            if (code[11].includes('Over')) {
+                                faultTypeHtml = `<span class="badge ${faultTypeClass}"><i class='fas fa-arrow-up me-1'></i>${code[11]}</span>`;
+                            } else if (code[11].includes('Under')) {
+                                faultTypeHtml = `<span class="badge ${faultTypeClass}"><i class='fas fa-arrow-down me-1'></i>${code[11]}</span>`;
+                            } else {
+                                faultTypeHtml = `<span class="badge ${faultTypeClass}">${code[11]}</span>`;
+                            }
+                        } else if (code[2] === 'Pass') {
+                            faultTypeHtml = `<span class="badge ${faultTypeClass}">Pass</span>`;
+                        } else {
+                            faultTypeHtml = `<span class="badge ${faultTypeClass}">N/A</span>`;
+                        }
                         cardContent += `
                             <tr style="background-color: ${bgColor} !important; ${code[2] === 'Fail' ? 'color: #fff;' : ''}">
                                 <td data-label="Code">${code[0]}</td>
                                 <td data-label="Description">${code[1]}</td>
                                 <td data-label="Current Value">${code[7] !== null ? code[7] + ' ' + (code[6] || '') : 'N/A'}</td>
                                 <td data-label="State"><strong style="color: ${textColor};">${code[2]}</strong></td>
+                                <td data-label="Fault Type">${faultTypeHtml}</td>
                                 <td data-label="Last Failure">${code[3] || ''}</td>
                                 <td data-label="History">${code[4]}</td>
                                 <td data-label="Last Read">${code[8] || 'Never'}</td>
@@ -321,6 +343,7 @@ function updateDiagnostics() {
                                         <th>Description</th>
                                         <th>Current Value</th>
                                         <th>State</th>
+                                        <th>Fault Type</th>
                                         <th>Last Failure</th>
                                         <th>History</th>
                                         <th>Last Read</th>
@@ -333,12 +356,29 @@ function updateDiagnostics() {
                     chamberData.humidity.forEach(code => {
                         const bgColor = code[2] === 'Pass' ? '#d4edda' : code[2] === 'Fail' ? '#f44336' : '#ffe066';
                         const textColor = code[2] === 'Pass' ? '#28a745' : code[2] === 'Fail' ? '#dc3545' : '#ffc107';
+                        const faultType = code[2] === 'Fail' && code[11] ? code[11] : code[2] === 'Pass' ? 'Pass' : 'N/A';
+                        const faultTypeClass = code[2] === 'Fail' && code[11] ? 'bg-danger' : code[2] === 'Pass' ? 'bg-success' : 'bg-secondary';
+                        let faultTypeHtml = '';
+                        if (code[2] === 'Fail' && code[11]) {
+                            if (code[11].includes('Over')) {
+                                faultTypeHtml = `<span class="badge ${faultTypeClass}"><i class='fas fa-arrow-up me-1'></i>${code[11]}</span>`;
+                            } else if (code[11].includes('Under')) {
+                                faultTypeHtml = `<span class="badge ${faultTypeClass}"><i class='fas fa-arrow-down me-1'></i>${code[11]}</span>`;
+                            } else {
+                                faultTypeHtml = `<span class="badge ${faultTypeClass}">${code[11]}</span>`;
+                            }
+                        } else if (code[2] === 'Pass') {
+                            faultTypeHtml = `<span class="badge ${faultTypeClass}">Pass</span>`;
+                        } else {
+                            faultTypeHtml = `<span class="badge ${faultTypeClass}">N/A</span>`;
+                        }
                         cardContent += `
                             <tr style="background-color: ${bgColor} !important; ${code[2] === 'Fail' ? 'color: #fff;' : ''}">
                                 <td data-label="Code">${code[0]}</td>
                                 <td data-label="Description">${code[1]}</td>
                                 <td data-label="Current Value">${code[7] !== null ? code[7] + ' ' + (code[6] || '') : 'N/A'}</td>
                                 <td data-label="State"><strong style="color: ${textColor};">${code[2]}</strong></td>
+                                <td data-label="Fault Type">${faultTypeHtml}</td>
                                 <td data-label="Last Failure">${code[3] || ''}</td>
                                 <td data-label="History">${code[4]}</td>
                                 <td data-label="Last Read">${code[8] || 'Never'}</td>

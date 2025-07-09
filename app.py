@@ -108,7 +108,8 @@ def init_db():
             target_value REAL,
             threshold REAL,
             time_to_achieve INTEGER,
-            enabled_at TIMESTAMP
+            enabled_at TIMESTAMP,
+            fault_type VARCHAR(255)
         )
     ''')
     
@@ -771,7 +772,7 @@ def get_diagnostics():
         c.execute('''
             SELECT dc.code, dc.description, dc.state, dc.last_failure, dc.history_count, 
                    dc.type, dc.modbus_units, dc.current_value, dc.last_read_time,
-                   r.name as room_name, r.id as room_id
+                   r.name as room_name, r.id as room_id, dc.fault_type
             FROM diagnostic_codes dc
             LEFT JOIN rooms r ON dc.room_id = r.id
             WHERE dc.enabled=1

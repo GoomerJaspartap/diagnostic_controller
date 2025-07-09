@@ -81,6 +81,7 @@ def send_alert(emails, phone_numbers, subject, message, table_data, current_time
                 f"Description: {row.get('description', '')}\n"
                 f"Type: {row.get('type', '')}\n"
                 f"State: {row.get('state', '')}\n"
+                f"Fault Type: {row.get('fault_type', 'N/A')}\n"
                 f"Current Value: {row.get('value', 'N/A')}\n"
                 f"Start Value: {row.get('start_value', 'N/A')}\n"
                 f"Target Value: {row.get('target_value', 'N/A')}\n"

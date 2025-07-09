@@ -203,7 +203,7 @@ def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
                                     threshold, start_value, target_value, current_value):
     """
     Checks if current_value at current_time is within threshold of expected value on linear ramp.
-    Works for both positive and negative slopes.
+x    Works for both positive and negative slopes.
     """
     # Convert datetime objects to seconds for calculation
     start_time_seconds = start_time.timestamp()
@@ -238,7 +238,7 @@ def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
 def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None):
     """Check if value is within diagnostic parameters using real-time strategy"""
     if value is None or start_value is None or target_value is None or threshold is None:
-        return "No Status"
+        return "No Status", None
     
     try:
         value_float = float(value)
@@ -278,9 +278,18 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
                 print(f"[DEBUG] Real-time check: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
                 
                 if in_bounds:
-                    return "Pass"
+                    return "Pass", None
                 else:
-                    return "Fail"
+                    # Determine fault type for real-time strategy
+                    if value_float > expected_value + threshold_float:
+                        fault_type = "Over Threshold"
+                    elif value_float < expected_value - threshold_float:
+                        fault_type = "Under Threshold"
+                    elif value_float > target_float:
+                        fault_type = "Over Target"
+                    else:
+                        fault_type = "Out of Bounds"
+                    return "Fail", fault_type
                     
             except Exception as e:
                 print(f"[DEBUG] Error in real-time calculation: {str(e)}")
@@ -289,11 +298,20 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
         # Fallback to simple threshold check (matching trial.py logic)
         deviation = abs(value_float - target_float)
         if deviation <= threshold_float and value_float <= target_float:
-            return "Pass"
+            return "Pass", None
         else:
-            return "Fail"
+            # Determine fault type for simple threshold check
+            if value_float > target_float + threshold_float:
+                fault_type = "Over Threshold"
+            elif value_float < target_float - threshold_float:
+                fault_type = "Under Threshold"
+            elif value_float > target_float:
+                fault_type = "Over Target"
+            else:
+                fault_type = "Out of Bounds"
+            return "Fail", fault_type
     except (ValueError, TypeError):
-        return "No Status"
+        return "No Status", None
 
 def get_refresh_time():
     """Get the current refresh time from the database"""
@@ -330,15 +348,17 @@ def update_diagnostics_batch(status_updates):
                         current_value = %s,
                         last_read_time = %s,
                         last_failure = %s,
-                        history_count = COALESCE(history_count, 0) + 1
+                        history_count = COALESCE(history_count, 0) + 1,
+                        fault_type = %s
                     WHERE code = %s
-                ''', (update['state'], update.get('value'), now_str, now_str, update['code']))
+                ''', (update['state'], update.get('value'), now_str, now_str, update.get('fault_type'), update['code']))
             else:
                 c.execute('''
                     UPDATE diagnostic_codes 
                     SET state = %s,
                         current_value = %s,
-                        last_read_time = %s
+                        last_read_time = %s,
+                        fault_type = NULL
                     WHERE code = %s
                 ''', (update['state'], update.get('value'), now_str, update['code']))
             # Always log to logs for 'Fail' and 'No Status'
@@ -383,7 +403,7 @@ def get_diagnostic_details(code):
     c = conn.cursor()
     c.execute('''
         SELECT d.id, d.code, d.description, d.type, d.state, d.current_value, d.last_read_time, d.last_failure, d.history_count, r.name as room_name,
-               d.start_value, d.target_value, d.threshold, d.time_to_achieve, d.enabled_at
+               d.start_value, d.target_value, d.threshold, d.time_to_achieve, d.enabled_at, d.fault_type
         FROM diagnostic_codes d
         LEFT JOIN rooms r ON d.room_id = r.id
         WHERE d.code = %s
@@ -405,7 +425,8 @@ def get_diagnostic_details(code):
             'target_value': row[11],
             'threshold': row[12],
             'time_to_achieve': row[13],
-            'enabled_at': row[14]
+            'enabled_at': row[14],
+            'fault_type': row[15]
         }
     return None
 
@@ -482,8 +503,8 @@ def chamber_modbus_loop(chamber_id, chamber_name, refresh_time):
                             print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                             enabled_at = diag[19] if len(diag) > 19 else None
                             print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                            status = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
-                        status_updates.append({'code': diag[1], 'state': status, 'value': value})
+                            status, fault_type = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
+                        status_updates.append({'code': diag[1], 'state': status, 'value': value, 'fault_type': fault_type})
                         if error is None and value is not None:
                             conn_data = init_db()
                             c_data = conn_data.cursor()

@@ -217,6 +217,15 @@ def on_message(client, userdata, msg):
                             if in_bounds:
                                 status = "Pass"
                             else:
+                                # Determine fault type for real-time strategy
+                                if value_float > expected_value + threshold:
+                                    fault_type = "Over Threshold"
+                                elif value_float < expected_value - threshold:
+                                    fault_type = "Under Threshold"
+                                elif value_float > target_value:
+                                    fault_type = "Over Target"
+                                else:
+                                    fault_type = "Out of Bounds"
                                 status = "Fail"
                                 
                             print(f"[DEBUG] Real-time check for {diagnostic[1]}: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
@@ -231,6 +240,15 @@ def on_message(client, userdata, msg):
                         if deviation <= threshold and value_float <= target_value:
                             status = "Pass"
                         else:
+                            # Determine fault type for simple threshold check
+                            if value_float > target_value + threshold:
+                                fault_type = "Over Threshold"
+                            elif value_float < target_value - threshold:
+                                fault_type = "Under Threshold"
+                            elif value_float > target_value:
+                                fault_type = "Over Target"
+                            else:
+                                fault_type = "Out of Bounds"
                             status = "Fail"
             except (ValueError, TypeError) as e:
                 print(f"[DEBUG] Error comparing values: {str(e)}")
@@ -265,9 +283,10 @@ def on_message(client, userdata, msg):
                         current_value = %s,
                         last_read_time = %s,
                         last_failure = %s,
-                        history_count = COALESCE(history_count, 0) + 1
+                        history_count = COALESCE(history_count, 0) + 1,
+                        fault_type = %s
                     WHERE id = %s
-                ''', (status, value, now_str, now_str, diagnostic[0]))
+                ''', (status, value, now_str, now_str, fault_type if 'fault_type' in locals() else None, diagnostic[0]))
                 
                 # Send alert
                 emails, phone_numbers = get_contacts()
@@ -303,7 +322,8 @@ def on_message(client, userdata, msg):
                     UPDATE diagnostic_codes 
                     SET state = %s,
                         current_value = %s,
-                        last_read_time = %s
+                        last_read_time = %s,
+                        fault_type = NULL
                     WHERE id = %s
                 ''', (status, value, now_str, diagnostic[0]))
 
