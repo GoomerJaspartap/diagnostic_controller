@@ -452,6 +452,9 @@ let currentGraphModal = null;
 let graphUpdateInterval = null;
 let lastGraphData = null;
 
+// Global variable to track trace visibility by name
+if (!window.traceVisibilityState) window.traceVisibilityState = {};
+
 // Graph functionality
 function showDiagnosticGraph(code, description) {
     // Create modal
@@ -652,52 +655,72 @@ function createGraph(data, modal) {
     // Prepare time window in local time
     const startTime = parseAsUTC(data.enabled_time);
     const timeToAchieve = data.time_to_achieve;
-    const endTime = new Date(startTime.getTime() + timeToAchieve * 1000);
     const now = new Date();
-    // Generate expected/threshold curves within window (matching trial.py logic)
+    
+    // Start the graph at enabled time and extend to show all data
+    let endTime = startTime;
+    if (data.data_points && data.data_points.length > 0) {
+        const latestPoint = data.data_points[data.data_points.length - 1];
+        if (latestPoint.timestamp) {
+            const latestPointTime = parseAsUTC(latestPoint.timestamp);
+            endTime = new Date(Math.max(latestPointTime.getTime(), now.getTime()));
+        }
+    }
+    
+    // Always extend at least 5 minutes beyond the latest data point
+    endTime = new Date(endTime.getTime() + 5 * 60 * 1000);
+    
+    // Generate expected/threshold curves (matching trial.py logic)
     const timePoints = [];
     const expectedValues = [];
     const upperThreshold = [];
     const lowerThreshold = [];
-    const timeStep = Math.max(1, Math.floor(timeToAchieve / 50));
+    const timeStep = Math.max(1, Math.floor((endTime.getTime() - startTime.getTime()) / 1000 / 100));
     
     // Calculate slope and intercept (matching trial.py logic)
     const m = (data.target_value - data.start_value) / timeToAchieve;
     const startTimeSeconds = startTime.getTime() / 1000;
     const b = data.start_value - m * startTimeSeconds;
     
-    for (let t = 0; t <= timeToAchieve; t += timeStep) {
+    const minBound = Math.min(data.start_value, data.target_value);
+    const maxBound = Math.max(data.start_value, data.target_value);
+    // Generate points from start time to end time (extending beyond diagnostic duration)
+    for (let t = 0; t <= (endTime.getTime() - startTime.getTime()) / 1000; t += timeStep) {
         const timestamp = new Date(startTime.getTime() + t * 1000);
         timePoints.push(toLocalISOString(timestamp)); // Use shifted ISO string for Plotly date axis
-        
         // Calculate expected value using trial.py logic
         const currentTimeSeconds = timestamp.getTime() / 1000;
         let expectedValue;
         if (currentTimeSeconds < startTimeSeconds) {
             expectedValue = data.start_value;
         } else if (currentTimeSeconds >= startTimeSeconds + timeToAchieve) {
+            // After diagnostic duration, maintain target value (flat line)
             expectedValue = data.target_value;
         } else {
             expectedValue = m * currentTimeSeconds + b;
         }
-        
-        // Clamp expected value to bounds
+        // Clamp expected value to bounds (matching trial.py)
         expectedValue = Math.max(Math.min(expectedValue, data.target_value), data.start_value);
-        
         expectedValues.push(expectedValue);
-        upperThreshold.push(expectedValue + data.threshold);
-        lowerThreshold.push(expectedValue - data.threshold);
+        // Calculate threshold lines (matching trial.py)
+        // After diagnostic duration, maintain constant threshold around target value
+        const upper = Math.min(expectedValue + data.threshold, maxBound);
+        const lower = Math.max(expectedValue - data.threshold, minBound);
+        upperThreshold.push(upper);
+        lowerThreshold.push(lower);
     }
-    // Actual data points within window
+    // Actual data points (only those after enabled time)
     const actualTimes = [];
     const actualValues = [];
     const actualColors = [];
     const actualTooltips = [];
+    const actualTimestamps = [];
     data.data_points.forEach(point => {
         if (point.timestamp) {
             const ptTime = parseAsUTC(point.timestamp);
-            if (ptTime >= startTime && ptTime <= endTime) {
-                actualTimes.push(toLocalISOString(ptTime)); // Use shifted ISO string for Plotly date axis
+            if (ptTime >= startTime) { // Only after enabled time
+                actualTimes.push(toLocalISOString(ptTime));
+                actualTimestamps.push(ptTime.getTime()); // For regression
                 actualValues.push(point.value);
                 // Determine if point is within bounds (matching trial.py logic)
                 const currentTimeSeconds = ptTime.getTime() / 1000;
@@ -709,23 +732,94 @@ function createGraph(data, modal) {
                 } else {
                     expectedValue = m * currentTimeSeconds + b;
                 }
-                
-                // Clamp expected value to bounds
+                // Clamp expected value to bounds (matching trial.py)
                 expectedValue = Math.max(Math.min(expectedValue, data.target_value), data.start_value);
-                
                 const deviation = Math.abs(point.value - expectedValue);
-                actualColors.push(deviation <= data.threshold && point.value <= data.target_value ? 'green' : 'red');
-                actualTooltips.push(`Value: ${point.value}<br>Time: ${ptTime.toLocaleString()}`);
+                const inBounds = deviation <= data.threshold && point.value <= data.target_value;
+                actualColors.push(inBounds ? 'green' : 'red');
+                actualTooltips.push(`Value: ${point.value}<br>Time: ${ptTime.toLocaleString()}<br>Expected: ${expectedValue.toFixed(2)}<br>Status: ${inBounds ? 'Pass' : 'Fail'}`);
             }
         }
     });
+
+    // Helper: calculate linear regression (least squares)
+    function linearRegression(x, y) {
+        const n = x.length;
+        if (n < 2) return null;
+        const xMean = x.reduce((a, b) => a + b, 0) / n;
+        const yMean = y.reduce((a, b) => a + b, 0) / n;
+        let num = 0, den = 0;
+        for (let i = 0; i < n; i++) {
+            num += (x[i] - xMean) * (y[i] - yMean);
+            den += (x[i] - xMean) ** 2;
+        }
+        const m = den === 0 ? 0 : num / den;
+        const b = yMean - m * xMean;
+        return { m, b };
+    }
+
+    // Calculate best fit line for all visible points
+    let bestFitTrace = null;
+    let bestFitEquation = '';
+    if (actualTimestamps.length >= 2) {
+        const reg = linearRegression(actualTimestamps, actualValues);
+        if (reg) {
+            // For display, use the visible x range
+            const minX = Math.min(...actualTimestamps);
+            const maxX = Math.max(...actualTimestamps);
+            const fitX = [minX, maxX];
+            const fitY = fitX.map(x => reg.m * x + reg.b);
+            bestFitTrace = {
+                x: fitX.map(x => toLocalISOString(new Date(x))),
+                y: fitY,
+                mode: 'lines',
+                name: 'Best Fit',
+                line: {color: 'red', width: 2, dash: 'dot'},
+                hoverinfo: 'skip',
+                showlegend: true
+            };
+            // Equation: y = m x + b, but x is time (ms), so show as y = m t + b
+            // Convert slope to per hour if range is large, else per second
+            let mDisp = reg.m;
+            let mUnit = 'per ms';
+            if (maxX - minX > 2 * 3600 * 1000) { // >2 hours
+                mDisp = reg.m * 3600 * 1000;
+                mUnit = 'per hour';
+            } else if (maxX - minX > 2 * 60 * 1000) { // >2 min
+                mDisp = reg.m * 60 * 1000;
+                mUnit = 'per min';
+            } else {
+                mDisp = reg.m * 1000;
+                mUnit = 'per sec';
+            }
+            bestFitEquation = `y = ${mDisp.toFixed(3)} t (${mUnit}) + ${reg.b.toFixed(2)}`;
+        }
+    }
+    // Calculate expected line equation (y = mx + b)
+    let expectedM = m;
+    let expectedB = b;
+    // For display, convert m to per second, per min, or per hour
+    let expectedMDisp = expectedM;
+    let expectedMUnit = 'per ms';
+    if (timeToAchieve > 2 * 3600) { // >2 hours
+        expectedMDisp = expectedM * 3600;
+        expectedMUnit = 'per hour';
+    } else if (timeToAchieve > 2 * 60) { // >2 min
+        expectedMDisp = expectedM * 60;
+        expectedMUnit = 'per min';
+    } else {
+        expectedMDisp = expectedM;
+        expectedMUnit = 'per sec';
+    }
+    const expectedEquation = `y = ${expectedMDisp.toFixed(3)} t (${expectedMUnit}) + ${expectedB.toFixed(2)}`;
+
     // Plotly traces
     const traces = [
         {
             x: timePoints,
             y: expectedValues,
             mode: 'lines',
-            name: 'Expected',
+            name: `Expected (${expectedEquation})`,
             line: {color: 'blue', width: 2}
         },
         {
@@ -775,12 +869,21 @@ function createGraph(data, modal) {
             showlegend: false
         }
     ];
-    // Add 'Now' line if now is within window
+    if (bestFitTrace) {
+        bestFitTrace.name = `Best Fit (${bestFitEquation})`;
+        traces.push(bestFitTrace);
+    }
+
+    // Add 'Now' line if now is within the extended window
     if (now >= startTime && now <= endTime) {
         const nowISO = toLocalISOString(now);
+        const allYValues = [...expectedValues, ...actualValues, ...upperThreshold, ...lowerThreshold];
+        const yMin = allYValues.length > 0 ? Math.min(...allYValues) : data.start_value;
+        const yMax = allYValues.length > 0 ? Math.max(...allYValues) : data.target_value;
+        
         traces.push({
             x: [nowISO, nowISO],
-            y: [Math.min(...expectedValues, ...actualValues, ...lowerThreshold), Math.max(...expectedValues, ...actualValues, ...upperThreshold)],
+            y: [yMin, yMax],
             mode: 'lines',
             name: 'Now',
             line: {color: 'red', width: 2, dash: 'dot'},
@@ -797,7 +900,6 @@ function createGraph(data, modal) {
             showgrid: true,
             automargin: true,
             type: 'date', // Use date axis for time
-            // range: [toLocalString(startTime), toLocalString(endTime)], // Remove or update if needed
         },
         yaxis: {
             title: 'Value',
@@ -810,6 +912,24 @@ function createGraph(data, modal) {
         hovermode: 'closest',
         dragmode: 'pan',
         autosize: true,
+        annotations: [
+            bestFitEquation ? {
+                xref: 'paper', yref: 'paper',
+                x: 0.99, y: 0.01,
+                xanchor: 'right', yanchor: 'bottom',
+                text: bestFitEquation,
+                showarrow: false,
+                font: {size: 13, color: 'red'}
+            } : null,
+            expectedEquation ? {
+                xref: 'paper', yref: 'paper',
+                x: 0.01, y: 0.01,
+                xanchor: 'left', yanchor: 'bottom',
+                text: expectedEquation,
+                showarrow: false,
+                font: {size: 13, color: 'blue'}
+            } : null
+        ].filter(Boolean)
     };
     // Config
     const config = {
@@ -825,8 +945,187 @@ function createGraph(data, modal) {
             scale: 2
         }
     };
+    // Before drawing, update trace visibility from state
+    traces.forEach((trace, i) => {
+        const name = trace.name || `Trace ${i+1}`;
+        if (window.traceVisibilityState[name] === false) {
+            trace.visible = 'legendonly';
+        } else {
+            trace.visible = true;
+        }
+    });
+
+    // Add custom legend container to the right of the graph
+    let legendDiv = document.getElementById('customLegend');
+    if (!legendDiv) {
+        legendDiv = document.createElement('div');
+        legendDiv.id = 'customLegend';
+        legendDiv.style.position = 'absolute';
+        legendDiv.style.top = '60px';
+        legendDiv.style.right = '10px';
+        legendDiv.style.width = '180px';
+        legendDiv.style.background = '#fff';
+        legendDiv.style.border = '1px solid #ddd';
+        legendDiv.style.borderRadius = '8px';
+        legendDiv.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)';
+        legendDiv.style.padding = '12px 10px 12px 10px';
+        legendDiv.style.zIndex = '2000';
+        legendDiv.style.fontSize = '14px';
+        legendDiv.style.maxHeight = '70vh';
+        legendDiv.style.overflowY = 'auto';
+        legendDiv.innerHTML = '<b>Show/Hide:</b><br/>';
+        container.parentElement.appendChild(legendDiv);
+    } else {
+        legendDiv.innerHTML = '<b>Show/Hide:</b><br/>';
+    }
+
+    // Helper: get trace names and colors
+    function getTraceInfo(traces) {
+        return traces.map((t, i) => ({
+            name: t.name || `Trace ${i+1}`,
+            color: t.line?.color || t.marker?.color || '#333',
+            index: i
+        }));
+    }
+
+    // Generate checkboxes for each trace
+    const traceInfo = getTraceInfo(traces);
+    traceInfo.forEach(trace => {
+        const id = `legend-checkbox-${trace.index}`;
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.marginBottom = '6px';
+        label.style.cursor = 'pointer';
+        label.htmlFor = id;
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.id = id;
+        // Set checked state from global visibility state
+        box.checked = window.traceVisibilityState[trace.name] !== false;
+        box.style.marginRight = '8px';
+        // Color dot
+        const dot = document.createElement('span');
+        dot.style.display = 'inline-block';
+        dot.style.width = '14px';
+        dot.style.height = '14px';
+        dot.style.borderRadius = '50%';
+        dot.style.background = Array.isArray(trace.color) ? trace.color[0] : trace.color;
+        dot.style.marginRight = '8px';
+        label.appendChild(box);
+        label.appendChild(dot);
+        label.appendChild(document.createTextNode(trace.name));
+        legendDiv.appendChild(label);
+        // Toggle trace visibility
+        box.addEventListener('change', function() {
+            window.traceVisibilityState[trace.name] = this.checked;
+            Plotly.restyle(container, {visible: this.checked ? true : 'legendonly'}, [trace.index]);
+        });
+    });
+
     // Use Plotly.react for smooth updates
     Plotly.react(container, traces, layout, config);
+    
+    // --- Fullscreen legend support ---
+    // Helper to move legend in/out of fullscreen
+    function moveLegendToFullscreen(isFullscreen) {
+        const legend = document.getElementById('customLegend');
+        if (!legend) return;
+        if (isFullscreen) {
+            // Move legend into fullscreen element
+            const fsElem = document.fullscreenElement;
+            if (fsElem && !fsElem.contains(legend)) {
+                fsElem.appendChild(legend);
+                legend.style.position = 'fixed';
+                legend.style.top = '60px';
+                legend.style.right = '30px';
+            }
+        } else {
+            // Move legend back to graph container's parent
+            const graphParent = container.parentElement;
+            if (graphParent && !graphParent.contains(legend)) {
+                graphParent.appendChild(legend);
+                legend.style.position = 'absolute';
+                legend.style.top = '60px';
+                legend.style.right = '10px';
+            }
+        }
+    }
+    // Listen for fullscreen changes
+    document.removeEventListener('fullscreenchange', window._legendFSHandler);
+    window._legendFSHandler = function() {
+        moveLegendToFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', window._legendFSHandler);
+    
+    // Add dynamic best fit update on zoom/pan/autoscale/reset
+    container.on('plotly_relayout', function(eventdata) {
+        let xRange = null;
+        if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
+            // Zoom or pan
+            xRange = [new Date(eventdata['xaxis.range[0]']).getTime(), new Date(eventdata['xaxis.range[1]']).getTime()];
+        } else if (eventdata['xaxis.autorange']) {
+            // Autoscale or reset axes: use full range
+            if (actualTimestamps.length >= 2) {
+                xRange = [Math.min(...actualTimestamps), Math.max(...actualTimestamps)];
+            }
+        }
+        if (!xRange) return;
+        // Filter points in view
+        const inView = actualTimestamps.map((t, i) => (t >= xRange[0] && t <= xRange[1]) ? i : -1).filter(i => i !== -1);
+        if (inView.length < 2) return;
+        const x = inView.map(i => actualTimestamps[i]);
+        const y = inView.map(i => actualValues[i]);
+        const reg = linearRegression(x, y);
+        if (!reg) return;
+        const fitX = [Math.min(...x), Math.max(...x)];
+        const fitY = fitX.map(xx => reg.m * xx + reg.b);
+        const newBestFit = {
+            x: fitX.map(xx => toLocalISOString(new Date(xx))),
+            y: fitY,
+            mode: 'lines',
+            name: `Best Fit (${bestFitEquation})`,
+            line: {color: 'red', width: 2, dash: 'dot'},
+            hoverinfo: 'skip',
+            showlegend: true
+        };
+        // Equation for annotation
+        let mDisp = reg.m;
+        let mUnit = 'per ms';
+        if (fitX[1] - fitX[0] > 2 * 3600 * 1000) {
+            mDisp = reg.m * 3600 * 1000;
+            mUnit = 'per hour';
+        } else if (fitX[1] - fitX[0] > 2 * 60 * 1000) {
+            mDisp = reg.m * 60 * 1000;
+            mUnit = 'per min';
+        } else {
+            mDisp = reg.m * 1000;
+            mUnit = 'per sec';
+        }
+        const eqn = `y = ${mDisp.toFixed(3)} t (${mUnit}) + ${reg.b.toFixed(2)}`;
+        // Replace best fit trace and annotation
+        const newTraces = traces.filter(t => !t.name.startsWith('Best Fit'));
+        newTraces.push(newBestFit);
+        const newLayout = {...layout, annotations: [
+            {
+                xref: 'paper', yref: 'paper',
+                x: 0.99, y: 0.01,
+                xanchor: 'right', yanchor: 'bottom',
+                text: eqn,
+                showarrow: false,
+                font: {size: 13, color: 'red'}
+            },
+            expectedEquation ? {
+                xref: 'paper', yref: 'paper',
+                x: 0.01, y: 0.01,
+                xanchor: 'left', yanchor: 'bottom',
+                text: expectedEquation,
+                showarrow: false,
+                font: {size: 13, color: 'blue'}
+            } : null
+        ].filter(Boolean)};
+        Plotly.react(container, newTraces, newLayout, config);
+    });
     
     // Store the data for incremental updates
     lastGraphData = data;
