@@ -75,6 +75,181 @@ def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
 
     return in_bounds, expected_value
 
+def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None):
+    """Check if value is within diagnostic parameters using real-time strategy"""
+    if value is None or start_value is None or target_value is None or threshold is None:
+        return "No Status", None
+    
+    try:
+        value_float = float(value)
+        start_float = float(start_value)
+        target_float = float(target_value)
+        threshold_float = float(threshold)
+        
+        # Use real-time strategy if we have all required parameters
+        if time_to_achieve is not None and enabled_time is not None:
+            try:
+                # Handle different types of enabled_time
+                if isinstance(enabled_time, str):
+                    enabled_time = datetime.fromisoformat(enabled_time)
+                elif isinstance(enabled_time, (int, float)):
+                    # enabled_at should be the actual timestamp, not a relative offset
+                    # If it's a small number, it's likely an old/invalid value
+                    if enabled_time < 1000000:  # Less than ~11 days in seconds
+                        print(f"[DEBUG] Warning: enabled_at={enabled_time} appears to be invalid. Using current time as fallback.")
+                        enabled_time = datetime.now()
+                    else:
+                        # Assume it's a Unix timestamp in seconds
+                        enabled_time = datetime.fromtimestamp(enabled_time)
+                # else: assume it's already a datetime object
+                
+                # Use UTC time consistently to match the database timestamps
+                current_time = datetime.utcnow()
+                
+                # Use the new real-time diagnostic strategy
+                print(f"[DEBUG] Time info: enabled_time={enabled_time}, time_to_achieve={time_to_achieve}, current_time={current_time}")
+                print(f"[DEBUG] Value info: start_value={start_float}, target_value={target_float}, current_value={value_float}, threshold={threshold_float}")
+                
+                in_bounds, expected_value = is_value_within_bounds_realtime(
+                    enabled_time, time_to_achieve, current_time,
+                    threshold_float, start_float, target_float, value_float
+                )
+                
+                print(f"[DEBUG] Real-time check: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
+                
+                if in_bounds:
+                    return "Pass", None
+                else:
+                    # Determine fault type for real-time strategy
+                    if value_float > expected_value + threshold_float:
+                        fault_type = "Over Threshold"
+                    elif value_float < expected_value - threshold_float:
+                        fault_type = "Under Threshold"
+                    elif value_float > target_float:
+                        fault_type = "Over Target"
+                    else:
+                        fault_type = "Out of Bounds"
+                    return "Fail", fault_type
+                    
+            except Exception as e:
+                print(f"[DEBUG] Error in real-time calculation: {str(e)}")
+                # Fall back to simple threshold check
+        
+        # Fallback to simple threshold check (matching trial.py logic)
+        deviation = abs(value_float - target_float)
+        if deviation <= threshold_float and value_float <= target_float:
+            return "Pass", None
+        else:
+            # Determine fault type for simple threshold check
+            if value_float > target_float + threshold_float:
+                fault_type = "Over Threshold"
+            elif value_float < target_float - threshold_float:
+                fault_type = "Under Threshold"
+            elif value_float > target_float:
+                fault_type = "Over Target"
+            else:
+                fault_type = "Out of Bounds"
+            return "Fail", fault_type
+    except (ValueError, TypeError):
+        return "No Status", None
+
+def update_diagnostics_batch(status_updates):
+    """Update multiple diagnostic codes in a batch"""
+    conn = init_db()
+    c = conn.cursor()
+    successful = []
+    errors = []
+    now_str = format_datetime(datetime.now())
+    error_triggered = False
+    for update in status_updates:
+        try:
+            if update['state'] in ('Fail', 'No Status'):
+                error_triggered = True
+                c.execute('''
+                    UPDATE diagnostic_codes 
+                    SET state = %s,
+                        current_value = %s,
+                        last_read_time = %s,
+                        last_failure = %s,
+                        history_count = COALESCE(history_count, 0) + 1,
+                        fault_type = %s
+                    WHERE code = %s
+                ''', (update['state'], update.get('value'), now_str, now_str, update.get('fault_type'), update['code']))
+            else:
+                c.execute('''
+                    UPDATE diagnostic_codes 
+                    SET state = %s,
+                        current_value = %s,
+                        last_read_time = %s,
+                        fault_type = NULL
+                    WHERE code = %s
+                ''', (update['state'], update.get('value'), now_str, update['code']))
+            # Always log to logs for 'Fail' and 'No Status'
+            if update['state'] in ('Fail', 'No Status'):
+                c.execute('''SELECT description, last_failure, history_count, type, current_value FROM diagnostic_codes WHERE code = %s''', (update['code'],))
+                row = c.fetchone()
+                c.execute('''
+                    INSERT INTO logs (code, description, state, last_failure, history_count, type, value)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    update['code'],
+                    row[0] if row else '',
+                    update['state'],
+                    row[1] if row else '',
+                    row[2] if row else 0,
+                    row[3] if row else '',
+                    row[4] if row else None
+                ))
+            successful.append(update['code'])
+        except Exception as e:
+            errors.append((update['code'], str(e)))
+    conn.commit()
+    conn.close()
+    if error_triggered:
+        update_last_error_event()
+    return successful, errors
+
+def update_last_error_event():
+    conn = init_db()
+    c = conn.cursor()
+    now_str = format_datetime(datetime.now())
+    c.execute('UPDATE app_settings SET last_error_event = %s WHERE id = 1', (now_str,))
+    conn.commit()
+    conn.close()
+
+def get_diagnostic_details(code):
+    """Get diagnostic details for alerts, including room name and all diagnostic parameters"""
+    conn = init_db()
+    c = conn.cursor()
+    c.execute('''
+        SELECT d.id, d.code, d.description, d.type, d.state, d.current_value, d.last_read_time, d.last_failure, d.history_count, r.name as room_name,
+               d.start_value, d.target_value, d.threshold, d.time_to_achieve, d.enabled_at, d.fault_type
+        FROM diagnostic_codes d
+        LEFT JOIN rooms r ON d.room_id = r.id
+        WHERE d.code = %s
+    ''', (code,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {
+            'code': row[1],
+            'description': row[2],
+            'type': row[3],
+            'state': row[4],
+            'value': row[5],
+            'last_read_time': row[6],
+            'last_failure': row[7],
+            'history_count': row[8],
+            'room_name': row[9] or 'Unassigned',
+            'start_value': row[10],
+            'target_value': row[11],
+            'threshold': row[12],
+            'time_to_achieve': row[13],
+            'enabled_at': row[14],
+            'fault_type': row[15]
+        }
+    return None
+
 def init_db():
     """Initialize database connection"""
     logging.debug(f"Connecting to database with config: {DB_CONFIG}")
@@ -117,7 +292,7 @@ def on_message(client, userdata, msg):
         conn = init_db()
         c = conn.cursor()
         c.execute('''
-            SELECT id, code, description, type, start_value, target_value, threshold, state
+            SELECT id, code, description, type, start_value, target_value, threshold, state, time_to_achieve, enabled_at
             FROM diagnostic_codes 
             WHERE mqtt_topic = %s AND enabled = 1 AND data_source_type = 'mqtt'
         ''', (msg.topic,))
@@ -159,7 +334,7 @@ def on_message(client, userdata, msg):
             print(f"[DEBUG] Error parsing payload: {str(e)}")
             value = None
 
-        # After value is parsed and before updating status/logs:
+        # Log data to data_logs table
         if value is not None:
             conn_data = init_db()
             c_data = conn_data.cursor()
@@ -167,168 +342,37 @@ def on_message(client, userdata, msg):
             conn_data.commit()
             conn_data.close()
 
-        # Check limits and update status using real-time strategy
-        if value is None:
-            status = "No Status"
-        else:
-            try:
-                value_float = float(value)
-                start_value = diagnostic[10]  # start_value
-                target_value = diagnostic[11]  # target_value
-                threshold = diagnostic[12]  # threshold
-                time_to_achieve = diagnostic[13]  # time_to_achieve
-                
-                if start_value is None or target_value is None or threshold is None or time_to_achieve is None:
-                    status = "No Status"
-                else:
-                    # Get the enabled time from the database
-                    c.execute('SELECT enabled_at FROM diagnostic_codes WHERE id = %s', (diagnostic[0],))
-                    enabled_time_result = c.fetchone()
-                    
-                    if enabled_time_result and enabled_time_result[0]:
-                        try:
-                            # Handle different types of enabled_time
-                            enabled_time = enabled_time_result[0]
-                            if isinstance(enabled_time, str):
-                                enabled_time = datetime.fromisoformat(enabled_time)
-                            elif isinstance(enabled_time, (int, float)):
-                                # enabled_at should be the actual timestamp, not a relative offset
-                                # If it's a small number, it's likely an old/invalid value
-                                if enabled_time < 1000000:  # Less than ~11 days in seconds
-                                    print(f"[DEBUG] Warning: enabled_at={enabled_time} appears to be invalid. Using current time as fallback.")
-                                    enabled_time = datetime.now()
-                                else:
-                                    # Assume it's a Unix timestamp in seconds
-                                    enabled_time = datetime.fromtimestamp(enabled_time)
-                            # else: assume it's already a datetime object
-                            
-                            # Use UTC time consistently to match the database timestamps
-                            current_time = datetime.utcnow()
-                            
-                            # Use the new real-time diagnostic strategy
-                            print(f"[DEBUG] Time info: enabled_time={enabled_time}, time_to_achieve={time_to_achieve}, current_time={current_time}")
-                            print(f"[DEBUG] Value info: start_value={start_value}, target_value={target_value}, current_value={value_float}, threshold={threshold}")
-                            
-                            in_bounds, expected_value = is_value_within_bounds_realtime(
-                                enabled_time, time_to_achieve, current_time,
-                                threshold, start_value, target_value, value_float
-                            )
-                            
-                            if in_bounds:
-                                status = "Pass"
-                            else:
-                                # Determine fault type for real-time strategy
-                                if value_float > expected_value + threshold:
-                                    fault_type = "Over Threshold"
-                                elif value_float < expected_value - threshold:
-                                    fault_type = "Under Threshold"
-                                elif value_float > target_value:
-                                    fault_type = "Over Target"
-                                else:
-                                    fault_type = "Out of Bounds"
-                                status = "Fail"
-                                
-                            print(f"[DEBUG] Real-time check for {diagnostic[1]}: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
-                            
-                        except Exception as e:
-                            print(f"[DEBUG] Error in real-time calculation: {str(e)}")
-                            status = "No Status"
-                    else:
-                        # Fallback to simple threshold check if no enabled time
-                        # Use the same logic as trial.py but without time-based calculation
-                        deviation = abs(value_float - target_value)
-                        if deviation <= threshold and value_float <= target_value:
-                            status = "Pass"
-                        else:
-                            # Determine fault type for simple threshold check
-                            if value_float > target_value + threshold:
-                                fault_type = "Over Threshold"
-                            elif value_float < target_value - threshold:
-                                fault_type = "Under Threshold"
-                            elif value_float > target_value:
-                                fault_type = "Over Target"
-                            else:
-                                fault_type = "Out of Bounds"
-                            status = "Fail"
-            except (ValueError, TypeError) as e:
-                print(f"[DEBUG] Error comparing values: {str(e)}")
-                status = "No Status"
-
+        # Check limits using the same logic as Modbus
+        status, fault_type = check_limits(value, diagnostic[4], diagnostic[5], diagnostic[6], diagnostic[8], diagnostic[9])
+        
         print(f"[DEBUG] Status for {diagnostic[1]}: {status}")
 
-        # Always log to logs for 'Fail' and 'No Status'
-        if status in ('Fail', 'No Status'):
-            now_str = format_datetime(datetime.now())
-            c.execute('''
-                INSERT INTO logs (code, description, state, last_failure, history_count, type, value)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                diagnostic[1],
-                diagnostic[2],
-                status,
-                now_str,
-                1,
-                diagnostic[3],
-                value
-            ))
+        # Create status update for batch processing
+        status_update = {
+            'code': diagnostic[1],
+            'state': status,
+            'value': value,
+            'fault_type': fault_type
+        }
 
-        # Only update if status has changed or it's the first reading
-        current_state = diagnostic[7]  # Get current state from database
-        if current_state != status or current_state == "No Status":
-            now_str = format_datetime(datetime.now())
-            if status in ('Fail', 'No Status'):
-                c.execute('''
-                    UPDATE diagnostic_codes 
-                    SET state = %s,
-                        current_value = %s,
-                        last_read_time = %s,
-                        last_failure = %s,
-                        history_count = COALESCE(history_count, 0) + 1,
-                        fault_type = %s
-                    WHERE id = %s
-                ''', (status, value, now_str, now_str, fault_type if 'fault_type' in locals() else None, diagnostic[0]))
-                
-                # Send alert
+        # Update diagnostic status using batch processing
+        successful, errors = update_diagnostics_batch([status_update])
+        
+        if successful:
+            print(f"[DEBUG] Successfully updated diagnostic {diagnostic[1]} to {status}")
+        if errors:
+            print(f"[DEBUG] Failed to update diagnostic {diagnostic[1]}: {errors}")
+
+        # Send alert if status is Fail or No Status
+        if status in ('Fail', 'No Status'):
+            details = get_diagnostic_details(diagnostic[1])
+            if details:
                 emails, phone_numbers = get_contacts()
                 subject = "Fault Detected"
                 message = "Fault Detected"
                 current_time = format_datetime(datetime.now())
                 refresh_time = get_refresh_time()
-                # Fetch latest diagnostic details for accurate alert data
-                c.execute('''
-                    SELECT code, description, type, state, current_value, last_read_time, last_failure, history_count, start_value, target_value, threshold, time_to_achieve, enabled_at
-                    FROM diagnostic_codes WHERE id = %s
-                ''', (diagnostic[0],))
-                row = c.fetchone()
-                if row:
-                    alert_data = [{
-                        'code': row[0],
-                        'description': row[1],
-                        'type': row[2],
-                        'state': row[3],
-                        'value': row[4],
-                        'last_read_time': row[5],
-                        'last_failure': row[6],
-                        'history_count': row[7],
-                        'start_value': row[8],
-                        'target_value': row[9],
-                        'threshold': row[10],
-                        'time_to_achieve': row[11],
-                        'enabled_at': row[12]
-                    }]
-                    send_alert(emails, phone_numbers, subject, message, alert_data, current_time, refresh_time)
-            else:
-                c.execute('''
-                    UPDATE diagnostic_codes 
-                    SET state = %s,
-                        current_value = %s,
-                        last_read_time = %s,
-                        fault_type = NULL
-                    WHERE id = %s
-                ''', (status, value, now_str, diagnostic[0]))
-
-            conn.commit()
-            print(f"[DEBUG] Updated diagnostic {diagnostic[1]} ({diagnostic[2]}) to {status} with value {value}")
+                send_alert(emails, phone_numbers, subject, message, [details], current_time, refresh_time)
 
         conn.close()
 
