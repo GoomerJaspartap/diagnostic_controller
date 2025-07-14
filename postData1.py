@@ -9,9 +9,6 @@ async def write_holding_registers(ip="10.160.0.157", port=5021):
             if value == -1:
                 print("Exiting...")
                 break
-            if not 0 <= value <= 65535:
-                print("Value must be between 0 and 65535")
-                continue
         except ValueError:
             print("Invalid input. Please enter a valid integer.")
             continue
