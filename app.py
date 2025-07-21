@@ -947,7 +947,7 @@ def update_diagnostic_params(code_id):
         except Exception:
             import pytz
             now_est = datetime.now(pytz.timezone('America/New_York'))
-        # Update the diagnostic parameters and enable the code
+        # Update the diagnostic parameters and enable the code (no upper/lower limit)
         c.execute('''
             UPDATE diagnostic_codes 
             SET start_value = %s, target_value = %s, threshold = %s, 
@@ -1367,6 +1367,84 @@ def diagnostic_graph(code):
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/bulk_update_diagnostic_params', methods=['POST'])
+@login_required
+def bulk_update_diagnostic_params():
+    try:
+        data = request.get_json()
+        if not data or 'codes' not in data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        codes = data['codes']
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        try:
+            now_est = datetime.now(ZoneInfo('America/New_York'))
+        except Exception:
+            import pytz
+            now_est = datetime.now(pytz.timezone('America/New_York'))
+        for code in codes:
+            code_id = code.get('code_id')
+            start_value = code.get('start_value')
+            target_value = code.get('target_value')
+            threshold = code.get('threshold')
+            time_to_achieve = code.get('time_to_achieve')
+            if None in [code_id, start_value, target_value, threshold, time_to_achieve]:
+                continue  # skip incomplete
+            c.execute('''
+                UPDATE diagnostic_codes 
+                SET start_value = %s, target_value = %s, threshold = %s, 
+                    time_to_achieve = %s, enabled = 1, enabled_at = %s
+                WHERE id = %s
+            ''', (start_value, target_value, threshold, time_to_achieve, now_est, code_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Bulk diagnostic parameters updated and codes enabled successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk_delete_diagnostic_codes', methods=['POST'])
+@login_required
+def bulk_delete_diagnostic_codes():
+    try:
+        data = request.get_json()
+        if not data or 'code_ids' not in data:
+            return jsonify({'success': False, 'error': 'No code_ids provided'}), 400
+        code_ids = data['code_ids']
+        if not isinstance(code_ids, list) or not code_ids:
+            return jsonify({'success': False, 'error': 'Invalid code_ids'}), 400
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('DELETE FROM diagnostic_codes WHERE id = ANY(%s)', (code_ids,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Selected diagnostic codes deleted successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk_disable_diagnostic_codes', methods=['POST'])
+@login_required
+def bulk_disable_diagnostic_codes():
+    try:
+        data = request.get_json()
+        if not data or 'code_ids' not in data:
+            return jsonify({'success': False, 'error': 'No code_ids provided'}), 400
+        code_ids = data['code_ids']
+        if not isinstance(code_ids, list) or not code_ids:
+            return jsonify({'success': False, 'error': 'Invalid code_ids'}), 400
+        code_ids = list(map(int, code_ids))
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('''
+            UPDATE diagnostic_codes
+            SET enabled = 0, enabled_at = NULL, start_value = NULL, target_value = NULL, threshold = NULL, time_to_achieve = NULL
+            WHERE id = ANY(%s)
+        ''', (code_ids,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Selected diagnostic codes disabled successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True) 

@@ -139,9 +139,21 @@
               {% endif %}
             {% endwith %}
 
+        <!-- Add Select/Bulk Actions Button above the table -->
+        <div id="bulk-actions-bar" class="d-none mb-3">
+            <button id="bulk-enable-btn" class="btn btn-primary me-2" disabled>Enable Selected</button>
+            <button id="bulk-disable-btn" class="btn btn-warning me-2" disabled>Disable Selected</button>
+            <button id="bulk-delete-btn" class="btn btn-danger" disabled>Delete Selected</button>
+        </div>
+        <div class="d-flex justify-content-end mb-2">
+            <button id="show-select-btn" class="btn btn-outline-secondary"><i class="fas fa-check-square"></i> Select</button>
+            <button id="cancel-select-btn" class="btn btn-outline-secondary d-none ms-2">Cancel</button>
+        </div>
+
         <!-- Diagnostic Codes by Room -->
         {% if codes_by_room %}
             {% for room_name, codes in codes_by_room.items() %}
+            {% set room_idx = loop.index0 %}
             <div class="card shadow mb-4">
                 <div class="room-header">
                     <h3>
@@ -164,9 +176,10 @@
                 
                 <div class="card-body">
             <div class="table-responsive">
-            <table class="table table-striped">
+            <table class="table table-striped room-table" data-room="{{ room_idx }}">
                 <thead>
                     <tr>
+                        <th class="select-col d-none"><input type="checkbox" class="select-all-codes" data-room="{{ room_idx }}"></th>
                         <th>Code</th>
                         <th>Description</th>
                                     <th>Type</th>
@@ -182,6 +195,7 @@
                 <tbody>
                                 {% for code in codes %}
                         <tr>
+                            <td class="select-col d-none"><input type="checkbox" class="code-select-checkbox" data-code-id="{{ code[0] }}" data-code-name="{{ code[1] }}" data-source-type="{{ code[8] }}" data-room-name="{{ room_name }}" data-description="{{ code[2] }}" data-room="{{ room_idx }}"></td>
                             <td data-label="Code">{{ code[1] }}</td>
                             <td data-label="Description">{{ code[2] }}</td>
                                     <td data-label="Type">
@@ -342,6 +356,27 @@
     </div>
 </div>
 
+<!-- Bulk Enable Modal (dynamically populated) -->
+<div class="modal fade" id="bulkEnableModal" tabindex="-1" aria-labelledby="bulkEnableModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkEnableModalLabel">Enable Multiple Diagnostic Codes</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="bulkEnableForm">
+                    <div id="bulk-enable-codes-list"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="submitBulkEnableBtn">Enable Selected</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize all popovers
@@ -449,7 +484,9 @@ document.addEventListener('DOMContentLoaded', function() {
             start_value: parseFloat(formData.get('start_value')),
             target_value: parseFloat(formData.get('target_value')),
             threshold: parseFloat(formData.get('threshold')),
-            time_to_achieve: parseInt(formData.get('time_to_achieve'))
+            time_to_achieve: parseInt(formData.get('time_to_achieve')),
+            upper_limit: null, // Removed upper_limit
+            lower_limit: null // Removed lower_limit
         };
         
         fetch(`/api/update_diagnostic_params/${codeId}`, {
@@ -496,6 +533,216 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Error disabling diagnostic code. Please try again.');
         });
     }
+
+    // Bulk select logic (per room)
+    const showSelectBtn = document.getElementById('show-select-btn');
+    const cancelSelectBtn = document.getElementById('cancel-select-btn');
+    const bulkActionsBar = document.getElementById('bulk-actions-bar');
+    const bulkEnableBtn = document.getElementById('bulk-enable-btn');
+    const bulkDisableBtn = document.getElementById('bulk-disable-btn');
+    const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+
+    showSelectBtn.addEventListener('click', function() {
+        document.querySelectorAll('.select-col').forEach(col => col.classList.remove('d-none'));
+        bulkActionsBar.classList.remove('d-none');
+        showSelectBtn.classList.add('d-none');
+        cancelSelectBtn.classList.remove('d-none');
+    });
+    cancelSelectBtn.addEventListener('click', function() {
+        document.querySelectorAll('.select-col').forEach(col => col.classList.add('d-none'));
+        bulkActionsBar.classList.add('d-none');
+        showSelectBtn.classList.remove('d-none');
+        cancelSelectBtn.classList.add('d-none');
+        document.querySelectorAll('.code-select-checkbox').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.select-all-codes').forEach(cb => cb.checked = false);
+        bulkEnableBtn.disabled = true;
+        bulkDisableBtn.disabled = true;
+        bulkDeleteBtn.disabled = true;
+    });
+    document.querySelectorAll('.select-all-codes').forEach(selectAll => {
+        selectAll.addEventListener('change', function() {
+            const room = this.getAttribute('data-room');
+            document.querySelectorAll('.code-select-checkbox[data-room="' + room + '"]').forEach(cb => {
+                cb.checked = this.checked;
+            });
+            updateBulkButtons();
+        });
+    });
+    document.querySelectorAll('.code-select-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateBulkButtons);
+    });
+    function updateBulkButtons() {
+        const checked = Array.from(document.querySelectorAll('.code-select-checkbox')).filter(cb => cb.checked);
+        bulkEnableBtn.disabled = checked.length === 0;
+        bulkDisableBtn.disabled = checked.length === 0;
+        bulkDeleteBtn.disabled = checked.length === 0;
+        // Update select-all per room
+        document.querySelectorAll('.select-all-codes').forEach(selectAll => {
+            const room = selectAll.getAttribute('data-room');
+            const roomCheckboxes = Array.from(document.querySelectorAll('.code-select-checkbox[data-room="' + room + '"]'));
+            selectAll.checked = roomCheckboxes.length > 0 && roomCheckboxes.every(cb => cb.checked);
+        });
+    }
+    bulkEnableBtn.addEventListener('click', function() {
+        // Populate modal with forms for each selected code
+        const checked = Array.from(document.querySelectorAll('.code-select-checkbox')).filter(cb => cb.checked);
+        const codes = checked.map(cb => ({
+            id: cb.getAttribute('data-code-id'),
+            name: cb.getAttribute('data-code-name'),
+            room: cb.getAttribute('data-room-name'),
+            description: cb.getAttribute('data-description'),
+            sourceType: cb.getAttribute('data-source-type')
+        }));
+        const container = document.getElementById('bulk-enable-codes-list');
+        container.innerHTML = '';
+        codes.forEach(code => {
+            const codeForm = document.createElement('div');
+            codeForm.className = 'card mb-3';
+            codeForm.innerHTML = `
+                <div class="card-header"><strong>${code.name}</strong> | <span class="text-muted">${code.room}</span><br><small>${code.description}</small></div>
+                <div class="card-body row g-3">
+                    <div class="col-md-4">
+                        <label>Start Value</label>
+                        <div class="input-group">
+                            <input type="number" step="any" class="form-control start-value" name="start_value_${code.id}" required>
+                            ${code.sourceType === 'modbus' ? `<button type="button" class="btn btn-outline-secondary read-live-btn" data-code-id="${code.id}"><i class="fas fa-sync-alt"></i> Read Live</button>` : ''}
+                        </div>
+                        <div class="form-text start-value-help" id="startValueHelp_${code.id}">Current value from the sensor</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label>Target Value</label>
+                        <input type="number" step="any" class="form-control" name="target_value_${code.id}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label>Threshold</label>
+                        <input type="number" step="any" class="form-control" name="threshold_${code.id}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label>Time to Achieve (seconds)</label>
+                        <input type="number" class="form-control" name="time_to_achieve_${code.id}" required min="1">
+                    </div>
+                </div>
+            `;
+            container.appendChild(codeForm);
+        });
+        // Attach read live handlers
+        container.querySelectorAll('.read-live-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const codeId = this.getAttribute('data-code-id');
+                const btnEl = this;
+                const input = btnEl.closest('.input-group').querySelector('.start-value');
+                const help = btnEl.closest('.input-group').parentElement.querySelector('.start-value-help');
+                btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reading...';
+                btnEl.disabled = true;
+                fetch(`/api/read_live_modbus/${codeId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        input.value = data.value;
+                        help.textContent = `Current value: ${data.value}${data.units ? ' ' + data.units : ''}`;
+                    } else {
+                        alert('Error reading live value: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error reading live value.');
+                })
+                .finally(() => {
+                    btnEl.innerHTML = '<i class="fas fa-sync-alt"></i> Read Live';
+                    btnEl.disabled = false;
+                });
+            });
+        });
+        const modal = new bootstrap.Modal(document.getElementById('bulkEnableModal'));
+        modal.show();
+    });
+    document.getElementById('submitBulkEnableBtn').addEventListener('click', function() {
+        const checked = Array.from(document.querySelectorAll('.code-select-checkbox')).filter(cb => cb.checked);
+        const codes = checked.map(cb => cb.getAttribute('data-code-id'));
+        const form = document.getElementById('bulkEnableForm');
+        const formData = new FormData(form);
+        let missing = false;
+        codes.forEach(id => {
+            ['start_value', 'target_value', 'threshold', 'time_to_achieve'].forEach(field => {
+                const input = form.querySelector(`[name="${field}_${id}"]`);
+                if (!input || input.value === '') {
+                    missing = true;
+                    if (input) input.classList.add('is-invalid');
+                } else {
+                    input.classList.remove('is-invalid');
+                }
+            });
+        });
+        if (missing) {
+            alert('Please fill in all required parameters for all selected codes.');
+            return;
+        }
+        const payload = codes.map(id => ({
+            code_id: id,
+            start_value: parseFloat(formData.get(`start_value_${id}`)),
+            target_value: parseFloat(formData.get(`target_value_${id}`)),
+            threshold: parseFloat(formData.get(`threshold_${id}`)),
+            time_to_achieve: parseInt(formData.get(`time_to_achieve_${id}`)),
+            upper_limit: null, // Removed upper_limit
+            lower_limit: null // Removed lower_limit
+        }));
+        fetch('/api/bulk_update_diagnostic_params', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codes: payload })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('bulkEnableModal')).hide();
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(() => alert('Bulk enable failed.'));
+    });
+    bulkDisableBtn.addEventListener('click', function() {
+        if (!confirm('Are you sure you want to disable all selected diagnostic codes?')) return;
+        const checked = Array.from(document.querySelectorAll('.code-select-checkbox')).filter(cb => cb.checked);
+        const codeIds = checked.map(cb => cb.getAttribute('data-code-id'));
+        fetch('/api/bulk_disable_diagnostic_codes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code_ids: codeIds })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(() => alert('Bulk disable failed.'));
+    });
+    bulkDeleteBtn.addEventListener('click', function() {
+        if (!confirm('Are you sure you want to delete all selected diagnostic codes? This cannot be undone.')) return;
+        const checked = Array.from(document.querySelectorAll('.code-select-checkbox')).filter(cb => cb.checked);
+        const codeIds = checked.map(cb => cb.getAttribute('data-code-id'));
+        fetch('/api/bulk_delete_diagnostic_codes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code_ids: codeIds })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(() => alert('Bulk delete failed.'));
+    });
 });
 
 function shiftUTCToLocal(utcString) {
