@@ -34,7 +34,7 @@ def get_active_diagnostics():
                modbus_unit_id, modbus_register_type, modbus_register_address,
                modbus_data_type, modbus_byte_order, modbus_scaling,
                modbus_units, modbus_offset, modbus_function_code,
-               start_value, target_value, threshold, time_to_achieve, enabled_at, upper_limit, lower_limit
+               start_value, target_value, threshold, time_to_achieve, enabled_at
         FROM diagnostic_codes 
         WHERE enabled = 1 AND data_source_type = 'modbus'
     ''')
@@ -235,7 +235,7 @@ x    Works for both positive and negative slopes.
     
     return in_bounds, expected_value
 
-def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None, upper_limit=None, lower_limit=None):
+def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None):
     """Check if value is within diagnostic parameters using real-time strategy"""
     if value is None or start_value is None or target_value is None or threshold is None:
         return "No Status", None
@@ -245,10 +245,6 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
         start_float = float(start_value)
         target_float = float(target_value)
         threshold_float = float(threshold)
-        
-        # Use upper_limit if provided, otherwise use target_value as the maximum bound
-        max_limit = float(upper_limit) if upper_limit is not None else target_float
-        min_limit = float(lower_limit) if lower_limit is not None else start_float
         
         # Use real-time strategy if we have all required parameters
         if time_to_achieve is not None and enabled_time is not None:
@@ -273,7 +269,6 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
                 # Use the new real-time diagnostic strategy
                 print(f"[DEBUG] Time info: enabled_time={enabled_time}, time_to_achieve={time_to_achieve}, current_time={current_time}")
                 print(f"[DEBUG] Value info: start_value={start_float}, target_value={target_float}, current_value={value_float}, threshold={threshold_float}")
-                print(f"[DEBUG] Limits: upper_limit={max_limit}, lower_limit={min_limit}")
                 
                 in_bounds, expected_value = is_value_within_bounds_realtime(
                     enabled_time, time_to_achieve, current_time,
@@ -282,14 +277,7 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
                 
                 print(f"[DEBUG] Real-time check: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
                 
-                # Additional check for upper and lower limits
-                if value_float > max_limit:
-                    print(f"[DEBUG] Value {value_float} exceeds upper limit {max_limit}")
-                    return "Fail", "Over Upper Limit"
-                elif value_float < min_limit:
-                    print(f"[DEBUG] Value {value_float} below lower limit {min_limit}")
-                    return "Fail", "Under Lower Limit"
-                elif in_bounds:
+                if in_bounds:
                     return "Pass", None
                 else:
                     # Determine fault type for real-time strategy
@@ -309,13 +297,7 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
         
         # Fallback to simple threshold check (matching trial.py logic)
         deviation = abs(value_float - target_float)
-        
-        # Check upper and lower limits first
-        if value_float > max_limit:
-            return "Fail", "Over Upper Limit"
-        elif value_float < min_limit:
-            return "Fail", "Under Lower Limit"
-        elif deviation <= threshold_float and value_float <= target_float:
+        if deviation <= threshold_float and value_float <= target_float:
             return "Pass", None
         else:
             # Determine fault type for simple threshold check
@@ -521,7 +503,7 @@ def chamber_modbus_loop(chamber_id, chamber_name, refresh_time):
                             print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                             enabled_at = diag[19] if len(diag) > 19 else None
                             print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                            status, fault_type = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at, diag[20], diag[21])
+                            status, fault_type = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
                         status_updates.append({'code': diag[1], 'state': status, 'value': value, 'fault_type': fault_type})
                         if error is None and value is not None:
                             conn_data = init_db()
@@ -609,7 +591,7 @@ def main(room_id=None):
                                 print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                                 enabled_at = diag[19] if len(diag) > 19 else None
                                 print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                                status, fault_type = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
+                                status = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
                             status_updates.append({'code': diag[1], 'state': status, 'value': value})
                             if error is None and value is not None:
                                 conn_data = init_db()
@@ -693,7 +675,7 @@ def main(room_id=None):
                                 print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                                 enabled_at = diag[19] if len(diag) > 19 else None
                                 print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                                status, fault_type = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
+                                status = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
                             status_updates.append({'code': diag[1], 'state': status, 'value': value})
                             if error is None and value is not None:
                                 conn_data = init_db()
