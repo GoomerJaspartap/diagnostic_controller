@@ -34,7 +34,7 @@ def get_active_diagnostics():
                modbus_unit_id, modbus_register_type, modbus_register_address,
                modbus_data_type, modbus_byte_order, modbus_scaling,
                modbus_units, modbus_offset, modbus_function_code,
-               start_value, target_value, threshold, time_to_achieve, enabled_at
+               start_value, target_value, threshold, steady_state_threshold, time_to_achieve, enabled_at
         FROM diagnostic_codes 
         WHERE enabled = 1 AND data_source_type = 'modbus'
     ''')
@@ -200,7 +200,7 @@ def read_single_modbus_value(ip, port, unit_id, register_type, register_address,
         raise Exception(f"Error reading Modbus value: {str(e)}")
 
 def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
-                                    threshold, start_value, target_value, current_value):
+                                    threshold, start_value, target_value, current_value, steady_state_threshold=None):
     """
     Checks if current_value at current_time is within threshold of expected value on linear ramp.
 x    Works for both positive and negative slopes.
@@ -222,20 +222,18 @@ x    Works for both positive and negative slopes.
         expected_value = m * current_time_seconds + b
     
     # Clamp expected value to bounds (works for both positive and negative slope)
-    min_bound = min(start_value, target_value)
-    max_bound = max(start_value, target_value)
-    expected_value = max(min(expected_value, max_bound), min_bound)
-    
+    # min_bound = min(start_value, target_value)
+    # max_bound = max(start_value, target_value)
+    # expected_value = max(min(expected_value, max_bound), min_bound)
     # Check if current value is within bounds
     deviation = abs(current_value - expected_value)
-    if start_value < target_value:
-        in_bounds = deviation <= threshold and current_value <= target_value
+    if steady_state_threshold is not None and current_time_seconds >= start_time_seconds + time_to_achieve:
+        in_bounds = deviation <= steady_state_threshold
     else:
-        in_bounds = deviation <= threshold and current_value >= target_value
-    
+        in_bounds = deviation <= threshold
     return in_bounds, expected_value
 
-def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None):
+def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None, steady_state_threshold=None):
     """Check if value is within diagnostic parameters using real-time strategy"""
     if value is None or start_value is None or target_value is None or threshold is None:
         return "No Status", None
@@ -272,7 +270,7 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
                 
                 in_bounds, expected_value = is_value_within_bounds_realtime(
                     enabled_time, time_to_achieve, current_time,
-                    threshold_float, start_float, target_float, value_float
+                    threshold_float, start_float, target_float, value_float, steady_state_threshold
                 )
                 
                 print(f"[DEBUG] Real-time check: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
@@ -297,7 +295,7 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
         
         # Fallback to simple threshold check (matching trial.py logic)
         deviation = abs(value_float - target_float)
-        if deviation <= threshold_float and value_float <= target_float:
+        if deviation <= threshold_float:
             return "Pass", None
         else:
             # Determine fault type for simple threshold check
@@ -458,7 +456,7 @@ def get_chamber_diagnostics(chamber_id):
                modbus_unit_id, modbus_register_type, modbus_register_address,
                modbus_data_type, modbus_byte_order, modbus_scaling,
                modbus_units, modbus_offset, modbus_function_code,
-               start_value, target_value, threshold, time_to_achieve, enabled_at
+               start_value, target_value, threshold, steady_state_threshold, time_to_achieve, enabled_at
         FROM diagnostic_codes 
         WHERE enabled = 1 AND data_source_type = 'modbus' AND room_id = %s
     ''', (chamber_id,))
@@ -503,7 +501,10 @@ def chamber_modbus_loop(chamber_id, chamber_name, refresh_time):
                             print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                             enabled_at = diag[19] if len(diag) > 19 else None
                             print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                            status, fault_type = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
+                            steady_state_threshold = diag[18] if len(diag) > 19 else None
+                            time_to_achieve = diag[19] if len(diag) > 19 else None
+                            enabled_at = diag[20] if len(diag) > 20 else None
+                            status, fault_type = check_limits(value, diag[15], diag[16], diag[17], time_to_achieve, enabled_at, steady_state_threshold)
                         status_updates.append({'code': diag[1], 'state': status, 'value': value, 'fault_type': fault_type})
                         if error is None and value is not None:
                             conn_data = init_db()
@@ -591,7 +592,10 @@ def main(room_id=None):
                                 print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                                 enabled_at = diag[19] if len(diag) > 19 else None
                                 print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                                status = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
+                                steady_state_threshold = diag[18] if len(diag) > 19 else None
+                                time_to_achieve = diag[19] if len(diag) > 19 else None
+                                enabled_at = diag[20] if len(diag) > 20 else None
+                                status, fault_type = check_limits(value, diag[15], diag[16], diag[17], time_to_achieve, enabled_at, steady_state_threshold)
                             status_updates.append({'code': diag[1], 'state': status, 'value': value})
                             if error is None and value is not None:
                                 conn_data = init_db()
@@ -675,7 +679,10 @@ def main(room_id=None):
                                 print(f"Diagnostic Params: Start={diag[15]}, Target={diag[16]}, Threshold={diag[17]}, Time={diag[18]}")
                                 enabled_at = diag[19] if len(diag) > 19 else None
                                 print(f"[DEBUG] Params: start={diag[15]}, target={diag[16]}, threshold={diag[17]}, time={diag[18]}, enabled_at={enabled_at}")
-                                status = check_limits(value, diag[15], diag[16], diag[17], diag[18], enabled_at)
+                                steady_state_threshold = diag[18] if len(diag) > 19 else None
+                                time_to_achieve = diag[19] if len(diag) > 19 else None
+                                enabled_at = diag[20] if len(diag) > 20 else None
+                                status, fault_type = check_limits(value, diag[15], diag[16], diag[17], time_to_achieve, enabled_at, steady_state_threshold)
                             status_updates.append({'code': diag[1], 'state': status, 'value': value})
                             if error is None and value is not None:
                                 conn_data = init_db()

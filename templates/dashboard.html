@@ -742,9 +742,14 @@ function createGraph(data, modal) {
         // Clamp expected value to bounds (works for both positive and negative slope)
         expectedValue = Math.max(Math.min(expectedValue, maxBound), minBound);
         expectedValues.push(expectedValue);
-        // Calculate threshold lines (works for both positive and negative slope)
-        const upper = Math.min(expectedValue + data.threshold, maxBound);
-        const lower = Math.max(expectedValue - data.threshold, minBound);
+        let upper, lower;
+        if (data.steady_state_threshold !== undefined && data.steady_state_threshold !== null && currentTimeSeconds >= startTimeSeconds + timeToAchieve) {
+            upper = data.target_value + data.steady_state_threshold;
+            lower = data.target_value - data.steady_state_threshold;
+        } else {
+            upper = expectedValue + data.threshold;
+            lower = expectedValue - data.threshold;
+        }
         upperThreshold.push(upper);
         lowerThreshold.push(lower);
     }
@@ -761,7 +766,7 @@ function createGraph(data, modal) {
                 actualTimes.push(toLocalISOString(ptTime));
                 actualTimestamps.push(ptTime.getTime()); // For regression
                 actualValues.push(point.value);
-                // Determine if point is within bounds (matching trial.py logic)
+                // Determine if point is within bounds (matching backend logic)
                 const currentTimeSeconds = ptTime.getTime() / 1000;
                 let expectedValue;
                 if (currentTimeSeconds < startTimeSeconds) {
@@ -771,15 +776,13 @@ function createGraph(data, modal) {
                 } else {
                     expectedValue = m * currentTimeSeconds + b;
                 }
-                // Clamp expected value to bounds (works for both positive and negative slope)
                 expectedValue = Math.max(Math.min(expectedValue, maxBound), minBound);
                 const deviation = Math.abs(point.value - expectedValue);
-                // Pass/fail logic for both positive and negative slope
                 let inBounds;
-                if (data.start_value < data.target_value) {
-                    inBounds = deviation <= data.threshold && point.value <= data.target_value;
+                if (data.steady_state_threshold !== undefined && data.steady_state_threshold !== null && currentTimeSeconds >= startTimeSeconds + timeToAchieve) {
+                    inBounds = deviation <= data.steady_state_threshold;
                 } else {
-                    inBounds = deviation <= data.threshold && point.value >= data.target_value;
+                    inBounds = deviation <= data.threshold;
                 }
                 actualColors.push(inBounds ? 'green' : 'red');
                 actualTooltips.push(`Value: ${point.value}<br>Time: ${ptTime.toLocaleString()}<br>Expected: ${expectedValue.toFixed(2)}<br>Status: ${inBounds ? 'Pass' : 'Fail'}`);

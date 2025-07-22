@@ -241,7 +241,17 @@
                                         <strong>Target:</strong> {{ "%.2f"|format(code[32]) if code[32] is not none else 'N/A' }}<br>
                                         <strong>Threshold:</strong> {{ "%.2f"|format(code[33]) if code[33] is not none else 'N/A' }}<br>
                                         <strong>Time:</strong> {{ code[34] if code[34] is not none else 'N/A' }}s<br>
-                                        <strong>Enabled:</strong> <span class="utc-to-local">{{ code[35].strftime('%Y-%m-%dT%H:%M:%S') if code[35] is not none else 'N/A' }}</span>
+                                        <strong>Enabled:</strong> <span class="utc-to-local">
+    {% if code[35] is not none %}
+        {% if code[35]|string|length > 10 and '-' in code[35]|string %}
+            {{ code[35] }}
+        {% else %}
+            {{ code[35] }}
+        {% endif %}
+    {% else %}
+        N/A
+    {% endif %}
+</span>
                                     </small>
                                 {% else %}
                                     <span class="text-muted">Not configured</span>
@@ -339,6 +349,11 @@
                             <label for="threshold" class="form-label">Threshold</label>
                             <input type="number" step="any" class="form-control" id="threshold" name="threshold" required>
                             <div class="form-text">Acceptable deviation from target value</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="steady_state_threshold" class="form-label">Steady State Threshold</label>
+                            <input type="number" step="any" class="form-control" id="steady_state_threshold" name="steady_state_threshold" required>
+                            <div class="form-text">Max deviation allowed after reaching target value (steady state)</div>
                         </div>
                         <div class="col-md-6">
                             <label for="time_to_achieve" class="form-label">Time to Achieve (seconds)</label>
@@ -484,6 +499,7 @@ document.addEventListener('DOMContentLoaded', function() {
             start_value: parseFloat(formData.get('start_value')),
             target_value: parseFloat(formData.get('target_value')),
             threshold: parseFloat(formData.get('threshold')),
+            steady_state_threshold: parseFloat(formData.get('steady_state_threshold')),
             time_to_achieve: parseInt(formData.get('time_to_achieve')),
             upper_limit: null, // Removed upper_limit
             lower_limit: null // Removed lower_limit
@@ -618,6 +634,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="number" step="any" class="form-control" name="threshold_${code.id}" required>
                     </div>
                     <div class="col-md-4">
+                        <label>Steady State Threshold</label>
+                        <input type="number" step="any" class="form-control" name="steady_state_threshold_${code.id}" required>
+                    </div>
+                    <div class="col-md-4">
                         <label>Time to Achieve (seconds)</label>
                         <input type="number" class="form-control" name="time_to_achieve_${code.id}" required min="1">
                     </div>
@@ -666,7 +686,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(form);
         let missing = false;
         codes.forEach(id => {
-            ['start_value', 'target_value', 'threshold', 'time_to_achieve'].forEach(field => {
+            ['start_value', 'target_value', 'threshold', 'steady_state_threshold', 'time_to_achieve'].forEach(field => {
                 const input = form.querySelector(`[name="${field}_${id}"]`);
                 if (!input || input.value === '') {
                     missing = true;
@@ -685,6 +705,7 @@ document.addEventListener('DOMContentLoaded', function() {
             start_value: parseFloat(formData.get(`start_value_${id}`)),
             target_value: parseFloat(formData.get(`target_value_${id}`)),
             threshold: parseFloat(formData.get(`threshold_${id}`)),
+            steady_state_threshold: parseFloat(formData.get(`steady_state_threshold_${id}`)),
             time_to_achieve: parseInt(formData.get(`time_to_achieve_${id}`)),
             upper_limit: null, // Removed upper_limit
             lower_limit: null // Removed lower_limit

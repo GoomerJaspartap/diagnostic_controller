@@ -107,6 +107,7 @@ def init_db():
             start_value REAL,
             target_value REAL,
             threshold REAL,
+            steady_state_threshold REAL,
             time_to_achieve INTEGER,
             enabled_at TIMESTAMP,
             fault_type VARCHAR(255)
@@ -936,8 +937,9 @@ def update_diagnostic_params(code_id):
         start_value = data.get('start_value')
         target_value = data.get('target_value')
         threshold = data.get('threshold')
+        steady_state_threshold = data.get('steady_state_threshold')
         time_to_achieve = data.get('time_to_achieve')
-        if None in [start_value, target_value, threshold, time_to_achieve]:
+        if None in [start_value, target_value, threshold, steady_state_threshold, time_to_achieve]:
             return jsonify({'success': False, 'error': 'All parameters are required'}), 400
         conn = psycopg2.connect(**DB_CONFIG)
         c = conn.cursor()
@@ -950,10 +952,10 @@ def update_diagnostic_params(code_id):
         # Update the diagnostic parameters and enable the code (no upper/lower limit)
         c.execute('''
             UPDATE diagnostic_codes 
-            SET start_value = %s, target_value = %s, threshold = %s, 
+            SET start_value = %s, target_value = %s, threshold = %s, steady_state_threshold = %s,
                 time_to_achieve = %s, enabled = 1, enabled_at = %s
             WHERE id = %s
-        ''', (start_value, target_value, threshold, time_to_achieve, now_est, code_id))
+        ''', (start_value, target_value, threshold, steady_state_threshold, time_to_achieve, now_est, code_id))
         if c.rowcount == 0:
             conn.close()
             return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
@@ -1320,20 +1322,16 @@ def diagnostic_graph(code):
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         c = conn.cursor()
-        
         # Get diagnostic parameters
         c.execute('''
-            SELECT start_value, target_value, threshold, time_to_achieve, enabled_at
+            SELECT start_value, target_value, threshold, steady_state_threshold, time_to_achieve, enabled_at
             FROM diagnostic_codes 
             WHERE code = %s AND enabled = 1
         ''', (code,))
         diagnostic = c.fetchone()
-        
         if not diagnostic:
             return jsonify({'success': False, 'error': 'Diagnostic not found or not enabled'})
-        
-        start_value, target_value, threshold, time_to_achieve, enabled_at = diagnostic
-        
+        start_value, target_value, threshold, steady_state_threshold, time_to_achieve, enabled_at = diagnostic
         # Get data points from data_logs
         c.execute('''
             SELECT value, event_time 
@@ -1342,9 +1340,7 @@ def diagnostic_graph(code):
             ORDER BY event_time ASC
         ''', (code,))
         data_points = c.fetchall()
-        
         conn.close()
-        
         # Format data points
         formatted_points = []
         for point in data_points:
@@ -1352,19 +1348,18 @@ def diagnostic_graph(code):
                 'value': point[0],
                 'timestamp': point[1].isoformat() if point[1] else None
             })
-        
         return jsonify({
             'success': True,
             'data': {
                 'start_value': start_value,
                 'target_value': target_value,
                 'threshold': threshold,
+                'steady_state_threshold': steady_state_threshold,
                 'time_to_achieve': time_to_achieve,
                 'enabled_time': enabled_at.isoformat() if enabled_at else None,
                 'data_points': formatted_points
             }
         })
-        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -1388,15 +1383,16 @@ def bulk_update_diagnostic_params():
             start_value = code.get('start_value')
             target_value = code.get('target_value')
             threshold = code.get('threshold')
+            steady_state_threshold = code.get('steady_state_threshold')
             time_to_achieve = code.get('time_to_achieve')
-            if None in [code_id, start_value, target_value, threshold, time_to_achieve]:
+            if None in [code_id, start_value, target_value, threshold, steady_state_threshold, time_to_achieve]:
                 continue  # skip incomplete
             c.execute('''
                 UPDATE diagnostic_codes 
-                SET start_value = %s, target_value = %s, threshold = %s, 
+                SET start_value = %s, target_value = %s, threshold = %s, steady_state_threshold = %s,
                     time_to_achieve = %s, enabled = 1, enabled_at = %s
                 WHERE id = %s
-            ''', (start_value, target_value, threshold, time_to_achieve, now_est, code_id))
+            ''', (start_value, target_value, threshold, steady_state_threshold, time_to_achieve, now_est, code_id))
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'message': 'Bulk diagnostic parameters updated and codes enabled successfully'})
@@ -1437,7 +1433,7 @@ def bulk_disable_diagnostic_codes():
         c = conn.cursor()
         c.execute('''
             UPDATE diagnostic_codes
-            SET enabled = 0, enabled_at = NULL, start_value = NULL, target_value = NULL, threshold = NULL, time_to_achieve = NULL
+            SET enabled = 0, enabled_at = NULL, start_value = NULL, target_value = NULL, threshold = NULL, steady_state_threshold = NULL, time_to_achieve = NULL
             WHERE id = ANY(%s)
         ''', (code_ids,))
         conn.commit()

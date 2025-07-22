@@ -26,7 +26,7 @@ DB_CONFIG = {
 }
 
 def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
-                                    threshold, start_value, target_value, current_value):
+                                    threshold, start_value, target_value, current_value, steady_state_threshold=None):
     """
     Checks if current_value at current_time is within threshold of expected value on linear ramp.
     
@@ -65,17 +65,18 @@ def is_value_within_bounds_realtime(start_time, time_to_achieve, current_time,
         print(f"[DEBUG] During ramp, calculated: {expected_value}")
     
     # Clamp expected value to bounds
-    expected_value = max(min(expected_value, target_value), start_value)
-    print(f"[DEBUG] After clamping: {expected_value}")
-
+    # expected_value = max(min(expected_value, target_value), start_value)
     # Check if current value is within bounds
     deviation = abs(current_value - expected_value)
-    in_bounds = deviation <= threshold and current_value <= target_value
+    if steady_state_threshold is not None and current_time_seconds >= start_time_seconds + time_to_achieve:
+        in_bounds = deviation <= steady_state_threshold
+    else:
+        in_bounds = deviation <= threshold
     print(f"[DEBUG] Final check: deviation={deviation}, threshold={threshold}, current_value={current_value}, target_value={target_value}, in_bounds={in_bounds}")
 
     return in_bounds, expected_value
 
-def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None):
+def check_limits(value, start_value, target_value, threshold, time_to_achieve=None, enabled_time=None, steady_state_threshold=None):
     """Check if value is within diagnostic parameters using real-time strategy"""
     if value is None or start_value is None or target_value is None or threshold is None:
         return "No Status", None
@@ -112,7 +113,7 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
                 
                 in_bounds, expected_value = is_value_within_bounds_realtime(
                     enabled_time, time_to_achieve, current_time,
-                    threshold_float, start_float, target_float, value_float
+                    threshold_float, start_float, target_float, value_float, steady_state_threshold
                 )
                 
                 print(f"[DEBUG] Real-time check: current={value_float}, expected={expected_value}, in_bounds={in_bounds}")
@@ -137,7 +138,7 @@ def check_limits(value, start_value, target_value, threshold, time_to_achieve=No
         
         # Fallback to simple threshold check (matching trial.py logic)
         deviation = abs(value_float - target_float)
-        if deviation <= threshold_float and value_float <= target_float:
+        if deviation <= threshold_float:
             return "Pass", None
         else:
             # Determine fault type for simple threshold check
@@ -262,7 +263,7 @@ def get_active_mqtt_diagnostics():
     c.execute('''
         SELECT id, code, description, type, mqtt_broker, mqtt_port, 
                mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
-               start_value, target_value, threshold, time_to_achieve, enabled_at
+               start_value, target_value, threshold, steady_state_threshold, time_to_achieve, enabled_at
         FROM diagnostic_codes 
         WHERE enabled = 1 AND data_source_type = 'mqtt'
     ''')
@@ -292,7 +293,7 @@ def on_message(client, userdata, msg):
         conn = init_db()
         c = conn.cursor()
         c.execute('''
-            SELECT id, code, description, type, start_value, target_value, threshold, state, time_to_achieve, enabled_at
+            SELECT id, code, description, type, start_value, target_value, threshold, steady_state_threshold, state, time_to_achieve, enabled_at
             FROM diagnostic_codes 
             WHERE mqtt_topic = %s AND enabled = 1 AND data_source_type = 'mqtt'
         ''', (msg.topic,))
@@ -343,7 +344,10 @@ def on_message(client, userdata, msg):
             conn_data.close()
 
         # Check limits using the same logic as Modbus
-        status, fault_type = check_limits(value, diagnostic[4], diagnostic[5], diagnostic[6], diagnostic[8], diagnostic[9])
+        steady_state_threshold = diagnostic[7] if len(diagnostic) > 8 else None
+        time_to_achieve = diagnostic[9] if len(diagnostic) > 9 else None
+        enabled_at = diagnostic[10] if len(diagnostic) > 10 else None
+        status, fault_type = check_limits(value, diagnostic[4], diagnostic[5], diagnostic[6], time_to_achieve, enabled_at, steady_state_threshold)
         
         print(f"[DEBUG] Status for {diagnostic[1]}: {status}")
 
