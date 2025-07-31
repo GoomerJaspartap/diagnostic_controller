@@ -5,4 +5,5 @@ python-dotenv
 pymodbus==3.3.2
 xhtml2pdf
 twilio
-paho-mqtt==1.6.1 
+paho-mqtt==1.6.1
+requests 

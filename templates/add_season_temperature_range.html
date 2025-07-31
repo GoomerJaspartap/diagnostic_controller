@@ -1,0 +1,237 @@
+{% extends 'base.html' %}
+{% block title %}Add Season Temperature Range - Diagnostic Controller{% endblock %}
+
+{% block content %}
+<style>
+    .form-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-left: 4px solid #28a745;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .form-header h3 {
+        margin: 0;
+        color: #003366;
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+    
+    .season-section {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background-color: #f8f9fa;
+    }
+    
+    .season-title {
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .season-badge {
+        font-size: 0.8em;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+    
+    .season-badge.summer {
+        background-color: #ff6b35 !important;
+        color: white;
+    }
+    
+    .season-badge.fall {
+        background-color: #f39c12 !important;
+        color: white;
+    }
+    
+    .season-badge.winter {
+        background-color: #3498db !important;
+        color: white;
+    }
+    
+    .form-label {
+        font-weight: 600;
+        color: #003366;
+    }
+    
+    .help-text {
+        font-size: 0.875em;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+    
+    .temp-range-section {
+        background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
+        border: 1px solid #28a745;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .temp-range-title {
+        color: #2e7d32;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .season-select {
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border: 1px solid #2196f3;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .season-select-title {
+        color: #1976d2;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+</style>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <!-- Header Section -->
+        <div class="form-header">
+            <h3>
+                <i class="fas fa-calendar-alt me-2"></i>Add Season Temperature Range
+            </h3>
+            <p class="mb-0 mt-2 text-muted">
+                Define temperature ranges for different seasons (Summer, Fall, Winter)
+            </p>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Form -->
+        <div class="card shadow">
+            <div class="card-body">
+                <form method="POST">
+                    <!-- Season Selection Section -->
+                    <div class="season-select">
+                        <div class="season-select-title">
+                            <i class="fas fa-calendar"></i>
+                            Season Selection
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label for="season" class="form-label">Select Season</label>
+                                <select class="form-select" id="season" name="season" required>
+                                    <option value="">Choose a season...</option>
+                                    <option value="Summer">Summer</option>
+                                    <option value="Fall">Fall</option>
+                                    <option value="Winter">Winter</option>
+                                </select>
+                                <div class="help-text">Select the season for which you want to define temperature range</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Temperature Range Section -->
+                    <div class="temp-range-section">
+                        <div class="temp-range-title">
+                            <i class="fas fa-thermometer-half"></i>
+                            Temperature Range
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="temp_min" class="form-label">Minimum Temperature (°C)</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="temp_min" 
+                                       name="temp_min" 
+                                       step="0.1" 
+                                       required 
+                                       placeholder="e.g., 20.0">
+                                <div class="help-text">Enter the lower bound of the temperature range for this season</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="temp_max" class="form-label">Maximum Temperature (°C)</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="temp_max" 
+                                       name="temp_max" 
+                                       step="0.1" 
+                                       required 
+                                       placeholder="e.g., 30.0">
+                                <div class="help-text">Enter the upper bound of the temperature range for this season</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <a href="{{ url_for('configurations') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Back to Configurations
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save me-1"></i>Save Season Range
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Form validation
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const tempMin = document.getElementById('temp_min');
+    const tempMax = document.getElementById('temp_max');
+    const seasonSelect = document.getElementById('season');
+    
+    form.addEventListener('submit', function(e) {
+        const min = parseFloat(tempMin.value);
+        const max = parseFloat(tempMax.value);
+        const season = seasonSelect.value;
+        
+        if (!season) {
+            e.preventDefault();
+            alert('Please select a season');
+            return false;
+        }
+        
+        if (min >= max) {
+            e.preventDefault();
+            alert('Minimum temperature must be less than maximum temperature');
+            return false;
+        }
+    });
+    
+    // Auto-dismiss flash messages after 5 seconds
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(function(alert) {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        });
+    }, 5000);
+});
+</script>
+{% endblock %} 

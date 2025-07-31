@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Add Location - Diagnostic Controller{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-plus me-2"></i>Add New Location
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label for="city" class="form-label">City Name</label>
+                            <input type="text" class="form-control" id="city" name="city" required 
+                                   placeholder="e.g., Oshawa, Toronto, Vancouver">
+                            <div class="form-text">Enter the city name for this location</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="latitude" class="form-label">Latitude</label>
+                            <input type="number" step="any" class="form-control" id="latitude" name="latitude" required 
+                                   placeholder="e.g., 43.8971">
+                            <div class="form-text">Enter the latitude coordinate (decimal degrees)</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="longitude" class="form-label">Longitude</label>
+                            <input type="number" step="any" class="form-control" id="longitude" name="longitude" required 
+                                   placeholder="e.g., -78.8658">
+                            <div class="form-text">Enter the longitude coordinate (decimal degrees)</div>
+                        </div>
+                        
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="is_default" name="is_default">
+                                <label class="form-check-label" for="is_default">
+                                    Set as default location
+                                </label>
+                                <div class="form-text">
+                                    This location will be used for weather-based slope calculations. 
+                                    Only one location can be default at a time.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-4">
+                        <a href="{{ url_for('location_config') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Locations
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save me-2"></i>Add Location
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Coordinate Help
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Common Canadian Cities:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Oshawa:</strong> 43.8971, -78.8658</li>
+                            <li><strong>Toronto:</strong> 43.6532, -79.3832</li>
+                            <li><strong>Vancouver:</strong> 49.2827, -123.1207</li>
+                            <li><strong>Montreal:</strong> 45.5017, -73.5673</li>
+                            <li><strong>Calgary:</strong> 51.0447, -114.0719</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>How to find coordinates:</h6>
+                        <ol>
+                            <li>Go to <a href="https://www.google.com/maps" target="_blank">Google Maps</a></li>
+                            <li>Search for your city</li>
+                            <li>Right-click on the location</li>
+                            <li>Select the coordinates from the context menu</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Basic validation
+    const form = document.querySelector('form');
+    const latitudeInput = document.getElementById('latitude');
+    const longitudeInput = document.getElementById('longitude');
+    
+    form.addEventListener('submit', function(e) {
+        const lat = parseFloat(latitudeInput.value);
+        const lng = parseFloat(longitudeInput.value);
+        
+        if (lat < -90 || lat > 90) {
+            e.preventDefault();
+            alert('Latitude must be between -90 and 90 degrees');
+            latitudeInput.focus();
+            return;
+        }
+        
+        if (lng < -180 || lng > 180) {
+            e.preventDefault();
+            alert('Longitude must be between -180 and 180 degrees');
+            longitudeInput.focus();
+            return;
+        }
+    });
+});
+</script>
+{% endblock %} 

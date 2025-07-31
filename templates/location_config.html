@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Location Configuration - Diagnostic Controller{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3>
+        <i class="fas fa-map-marker-alt me-2"></i>Location Configuration
+    </h3>
+    <a href="{{ url_for('add_location') }}" class="btn btn-success">
+        <i class="fas fa-plus me-2"></i>Add Location
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-globe me-2"></i>Weather Locations
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if locations %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>City</th>
+                                <th>Latitude</th>
+                                <th>Longitude</th>
+                                <th>Default</th>
+                                <th>Created</th>
+                                <th>Updated</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for location in locations %}
+                            <tr>
+                                <td>
+                                    <strong>{{ location.city }}</strong>
+                                    {% if location.is_default %}
+                                    <span class="badge bg-success ms-2">Default</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ "%.4f"|format(location.latitude) }}</td>
+                                <td>{{ "%.4f"|format(location.longitude) }}</td>
+                                <td>
+                                    {% if location.is_default %}
+                                    <i class="fas fa-check text-success"></i>
+                                    {% else %}
+                                    <i class="fas fa-times text-muted"></i>
+                                    {% endif %}
+                                </td>
+                                <td>{{ location.created_at.strftime('%Y-%m-%d %H:%M') if location.created_at else 'N/A' }}</td>
+                                <td>{{ location.updated_at.strftime('%Y-%m-%d %H:%M') if location.updated_at else 'N/A' }}</td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <a href="{{ url_for('edit_location', location_id=location.id) }}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </a>
+                                        {% if not location.is_default %}
+                                        <form action="{{ url_for('delete_location', location_id=location.id) }}" 
+                                              method="POST" class="d-inline" 
+                                              onsubmit="return confirm('Are you sure you want to delete this location?')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                <i class="fas fa-trash"></i> Delete
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-map-marker-alt fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No locations configured</h5>
+                    <p class="text-muted">Add a location to enable weather-based slope calculations for diagnostic codes.</p>
+                    <a href="{{ url_for('add_location') }}" class="btn btn-success btn-lg">
+                        <i class="fas fa-plus me-2"></i>Add First Location
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>About Location Configuration
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-map-marker-alt me-2"></i>Weather Data Source</h6>
+                        <p class="text-muted">
+                            Locations are used to fetch current weather data from the Open-Meteo API. 
+                            This data is used to determine seasons and calculate appropriate slopes for diagnostic codes.
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-cog me-2"></i>Default Location</h6>
+                        <p class="text-muted">
+                            The default location is used for weather-based slope calculations when enabling diagnostic codes. 
+                            Only one location can be set as default at a time.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -357,8 +357,20 @@
                         </div>
                         <div class="col-md-6">
                             <label for="time_to_achieve" class="form-label">Time to Achieve (seconds)</label>
-                            <input type="number" class="form-control" id="time_to_achieve" name="time_to_achieve" required min="1">
-                            <div class="form-text">Time allowed to reach target value</div>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="time_to_achieve" name="time_to_achieve" min="1">
+                                <button type="button" class="btn btn-outline-info" id="calculateTimeBtn">
+                                    <i class="fas fa-calculator"></i> Calculate
+                                </button>
+                            </div>
+                            <div class="form-text">Time allowed to reach target value (use Calculate button for weather-based calculation)</div>
+                        </div>
+
+                        <div class="col-12" id="weatherInfo" style="display: none;">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-cloud-sun me-2"></i>Weather Information</h6>
+                                <div id="weatherDetails"></div>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -435,6 +447,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 readLiveBtn.style.display = 'none';
             }
             
+            // Reset weather info display
+            document.getElementById('weatherInfo').style.display = 'none';
+            
             // Show modal
             const modal = new bootstrap.Modal(document.getElementById('diagnosticParamsModal'));
             modal.show();
@@ -458,6 +473,131 @@ document.addEventListener('DOMContentLoaded', function() {
             enableDiagnosticCode(currentCodeId);
         }
     });
+    
+    // Handle calculate time button
+    document.getElementById('calculateTimeBtn').addEventListener('click', function() {
+        const startValueInput = document.getElementById('start_value');
+        const targetValueInput = document.getElementById('target_value');
+        
+        const startValue = parseFloat(startValueInput.value);
+        const targetValue = parseFloat(targetValueInput.value);
+        
+        console.log('Start Value:', startValue, 'Target Value:', targetValue); // Debug log
+        
+        if (isNaN(startValue) || isNaN(targetValue)) {
+            alert('Please enter valid numeric values for both start value and target value before calculating time.');
+            return;
+        }
+        
+        if (currentCodeId) {
+            calculateTimeFromWeather(currentCodeId, startValue, targetValue);
+        }
+    });
+    
+    function calculateTimeFromWeather(codeId, startValue, targetValue) {
+        const btn = document.getElementById('calculateTimeBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
+        btn.disabled = true;
+        
+        fetch(`/api/calculate_time_from_weather/${codeId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                start_value: startValue,
+                target_value: targetValue
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.weather_info) {
+                // Update the time_to_achieve field
+                document.getElementById('time_to_achieve').value = data.time_to_achieve;
+                
+                // Calculate value difference for display
+                const valueDifference = Math.abs(targetValue - startValue);
+                
+                // Show detailed weather and calculation information with debugging
+                const weatherDetails = document.getElementById('weatherDetails');
+                
+                // Build configs used information with detailed debugging
+                let configsUsedHtml = '';
+                let debugInfoHtml = '';
+                
+                if (data.weather_info.configs_used && data.weather_info.configs_used.length > 0) {
+                    configsUsedHtml = '<strong>Configurations Used:</strong><br>';
+                    data.weather_info.configs_used.forEach((config, index) => {
+                        configsUsedHtml += `<span class="text-muted">Range ${index + 1}:</span> ${config.range} (slope: ${config.slope.toFixed(2)})<br>`;
+                    });
+                    
+                    if (data.weather_info.config_count > 1) {
+                        configsUsedHtml += `<span class="text-muted">Average Slope:</span> (${data.weather_info.total_slope.toFixed(2)} ÷ ${data.weather_info.config_count}) = <strong>${data.weather_info.slope_per_min.toFixed(2)}</strong><br>`;
+                    }
+                    // Add debugging information
+                    debugInfoHtml = `
+                        <div class="mt-3 p-2 bg-light border rounded">
+                            <strong>🔍 Debug Information:</strong><br>
+                            <span class="text-muted">Input Values:</span> Start=${startValue}, Target=${targetValue}, Current Temp=${data.weather_info.temperature}°C<br>
+                            <span class="text-muted">Season Detection:</span> ${data.weather_info.season}<br>
+                            <span class="text-muted">Ranges Found:</span> ${data.weather_info.config_count}<br>
+                            <span class="text-muted">Total Slope Sum:</span> ${data.weather_info.total_slope.toFixed(2)}<br>
+                            <span class="text-muted">Average Calculation:</span> ${data.weather_info.total_slope.toFixed(2)} ÷ ${data.weather_info.config_count} = ${data.weather_info.slope_per_min.toFixed(2)}<br>
+                            <span class="text-muted">Slope Conversion:</span> ${data.weather_info.slope_per_min.toFixed(2)} ÷ 60 = ${data.weather_info.slope_per_sec.toFixed(4)} per second<br>
+                            <span class="text-muted">Final Calculation:</span> ${valueDifference.toFixed(2)} ÷ ${data.weather_info.slope_per_sec.toFixed(4)} = ${data.time_to_achieve} seconds
+                        </div>
+                    `;
+                }
+                
+                weatherDetails.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>🌤️ Weather Data:</strong><br>
+                            <span class="text-muted">Temperature:</span> ${data.weather_info.temperature}°C<br>
+                            <span class="text-muted">Humidity:</span> ${data.weather_info.humidity}%<br>
+                            <span class="text-muted">Season:</span> ${data.weather_info.season}
+                        </div>
+                        <div class="col-md-6">
+                            <strong>📊 Calculation Details:</strong><br>
+                            <span class="text-muted">Value Difference:</span> ${valueDifference.toFixed(2)}<br>
+                            <span class="text-muted">Slope per Minute:</span> <strong>${data.weather_info.slope_per_min.toFixed(2)}</strong><br>
+                            <span class="text-muted">Slope per Second:</span> ${data.weather_info.slope_per_sec.toFixed(4)}<br>
+                            <span class="text-muted">Calculated Time:</span> <strong class="text-success">${data.time_to_achieve} seconds</strong>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-12">
+                            ${configsUsedHtml}
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-12">
+                            <small class="text-muted">
+                                <strong>📐 Formula:</strong> Time = Value Difference ÷ Slope per Second<br>
+                                <strong>🧮 Calculation:</strong> ${valueDifference.toFixed(2)} ÷ ${data.weather_info.slope_per_sec.toFixed(4)} = ${data.time_to_achieve} seconds
+                            </small>
+                        </div>
+                    </div>
+                    ${debugInfoHtml}
+                `;
+                document.getElementById('weatherInfo').style.display = 'block';
+                
+                // Weather calculation is automatically used when Calculate button is clicked
+                
+            } else {
+                alert('Error calculating time: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error calculating time. Please try again.');
+        })
+        .finally(() => {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    }
     
     function readLiveModbusValue(codeId) {
         const btn = document.getElementById('readLiveValueBtn');
@@ -495,14 +635,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('diagnosticParamsForm');
         const formData = new FormData(form);
         
+        // Check if weather info is displayed (meaning Calculate button was used)
+        const weatherInfoDisplayed = document.getElementById('weatherInfo').style.display !== 'none';
+        
         const data = {
             start_value: parseFloat(formData.get('start_value')),
             target_value: parseFloat(formData.get('target_value')),
             threshold: parseFloat(formData.get('threshold')),
             steady_state_threshold: parseFloat(formData.get('steady_state_threshold')),
-            time_to_achieve: parseInt(formData.get('time_to_achieve')),
-            upper_limit: null, // Removed upper_limit
-            lower_limit: null // Removed lower_limit
+            time_to_achieve: formData.get('time_to_achieve') ? parseInt(formData.get('time_to_achieve')) : null,
+            use_weather_calculation: weatherInfoDisplayed // Use weather calculation if Calculate button was used
         };
         
         fetch(`/api/update_diagnostic_params/${codeId}`, {
@@ -515,6 +657,77 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Show weather info if available
+                if (data.weather_info) {
+                    const startValue = parseFloat(document.getElementById('start_value').value);
+                    const targetValue = parseFloat(document.getElementById('target_value').value);
+                    const valueDifference = Math.abs(targetValue - startValue);
+                    
+                    const weatherDetails = document.getElementById('weatherDetails');
+                    
+                    // Build configs used information with detailed debugging
+                    let configsUsedHtml = '';
+                    let debugInfoHtml = '';
+                    
+                    if (data.weather_info.configs_used && data.weather_info.configs_used.length > 0) {
+                        configsUsedHtml = '<strong>Configurations Used:</strong><br>';
+                        data.weather_info.configs_used.forEach((config, index) => {
+                            configsUsedHtml += `<span class="text-muted">Range ${index + 1}:</span> ${config.range} (slope: ${config.slope.toFixed(2)})<br>`;
+                        });
+                        
+                        if (data.weather_info.config_count > 1) {
+                            configsUsedHtml += `<span class="text-muted">Average Slope:</span> (${data.weather_info.total_slope.toFixed(2)} ÷ ${data.weather_info.config_count}) = <strong>${data.weather_info.slope_per_min.toFixed(2)}</strong><br>`;
+                        }
+                        
+                        // Add debugging information
+                        debugInfoHtml = `
+                            <div class="mt-3 p-2 bg-light border rounded">
+                                <strong>🔍 Debug Information:</strong><br>
+                                <span class="text-muted">Input Values:</span> Start=${startValue}, Target=${targetValue}, Current Temp=${data.weather_info.temperature}°C<br>
+                                <span class="text-muted">Season Detection:</span> ${data.weather_info.season}<br>
+                                <span class="text-muted">Ranges Found:</span> ${data.weather_info.config_count}<br>
+                                <span class="text-muted">Total Slope Sum:</span> ${data.weather_info.total_slope.toFixed(2)}<br>
+                                <span class="text-muted">Average Calculation:</span> ${data.weather_info.total_slope.toFixed(2)} ÷ ${data.weather_info.config_count} = ${data.weather_info.slope_per_min.toFixed(2)}<br>
+                                <span class="text-muted">Slope Conversion:</span> ${data.weather_info.slope_per_min.toFixed(2)} ÷ 60 = ${data.weather_info.slope_per_sec.toFixed(4)} per second<br>
+                                <span class="text-muted">Final Calculation:</span> ${valueDifference.toFixed(2)} ÷ ${data.weather_info.slope_per_sec.toFixed(4)} = ${data.time_to_achieve} seconds
+                            </div>
+                        `;
+                    }
+                    
+                    weatherDetails.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>🌤️ Weather Data:</strong><br>
+                                <span class="text-muted">Temperature:</span> ${data.weather_info.temperature}°C<br>
+                                <span class="text-muted">Humidity:</span> ${data.weather_info.humidity}%<br>
+                                <span class="text-muted">Season:</span> ${data.weather_info.season}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>📊 Calculation Details:</strong><br>
+                                <span class="text-muted">Value Difference:</span> ${valueDifference.toFixed(2)}<br>
+                                <span class="text-muted">Slope per Minute:</span> <strong>${data.weather_info.slope_per_min.toFixed(2)}</strong><br>
+                                <span class="text-muted">Slope per Second:</span> ${data.weather_info.slope_per_sec.toFixed(4)}<br>
+                                <span class="text-muted">Calculated Time:</span> <strong class="text-success">${data.time_to_achieve} seconds</strong>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                ${configsUsedHtml}
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <small class="text-muted">
+                                    <strong>📐 Formula:</strong> Time = Value Difference ÷ Slope per Second<br>
+                                    <strong>🧮 Calculation:</strong> ${valueDifference.toFixed(2)} ÷ ${data.weather_info.slope_per_sec.toFixed(4)} = ${data.time_to_achieve} seconds
+                                </small>
+                            </div>
+                        </div>
+                        ${debugInfoHtml}
+                    `;
+                    document.getElementById('weatherInfo').style.display = 'block';
+                }
+                
                 // Close modal and reload page
                 const modal = bootstrap.Modal.getInstance(document.getElementById('diagnosticParamsModal'));
                 modal.hide();
@@ -639,7 +852,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="col-md-4">
                         <label>Time to Achieve (seconds)</label>
-                        <input type="number" class="form-control" name="time_to_achieve_${code.id}" required min="1">
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="time_to_achieve_${code.id}" min="1">
+                            <button type="button" class="btn btn-outline-info calculate-time-btn" data-code-id="${code.id}">
+                                <i class="fas fa-calculator"></i> Calculate
+                            </button>
+                        </div>
+                        <div class="form-text">Use Calculate button for weather-based calculation</div>
+                    </div>
+                    <div class="col-12 weather-info-bulk" id="weatherInfo_${code.id}" style="display: none;">
+                        <div class="alert alert-info">
+                            <h6><i class="fas fa-cloud-sun me-2"></i>Weather Information</h6>
+                            <div class="weather-details" id="weatherDetails_${code.id}"></div>
+                        </div>
                     </div>
                 </div>
             `;
@@ -676,6 +901,130 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             });
         });
+        
+        // Attach calculate time handlers for bulk enable
+        container.querySelectorAll('.calculate-time-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const codeId = this.getAttribute('data-code-id');
+                const card = this.closest('.card');
+                const startValueInput = card.querySelector(`[name="start_value_${codeId}"]`);
+                const targetValueInput = card.querySelector(`[name="target_value_${codeId}"]`);
+                const timeInput = card.querySelector(`[name="time_to_achieve_${codeId}"]`);
+                
+                const startValue = parseFloat(startValueInput.value);
+                const targetValue = parseFloat(targetValueInput.value);
+                
+                if (isNaN(startValue) || isNaN(targetValue)) {
+                    alert('Please enter valid numeric values for both start value and target value before calculating time.');
+                    return;
+                }
+                
+                const btnEl = this;
+                const originalText = btnEl.innerHTML;
+                btnEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
+                btnEl.disabled = true;
+                
+                fetch(`/api/calculate_time_from_weather/${codeId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        start_value: startValue,
+                        target_value: targetValue
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.weather_info) {
+                        // Update the time_to_achieve field
+                        timeInput.value = data.time_to_achieve;
+                        
+                        // Calculate value difference for display
+                        const valueDifference = Math.abs(targetValue - startValue);
+                        
+                        // Show detailed weather and calculation information
+                        const weatherDetails = card.querySelector(`#weatherDetails_${codeId}`);
+                        
+                        // Build configs used information with detailed debugging
+                        let configsUsedHtml = '';
+                        let debugInfoHtml = '';
+                        
+                        if (data.weather_info.configs_used && data.weather_info.configs_used.length > 0) {
+                            configsUsedHtml = '<strong>Configurations Used:</strong><br>';
+                            data.weather_info.configs_used.forEach((config, index) => {
+                                configsUsedHtml += `<span class="text-muted">Range ${index + 1}:</span> ${config.range} (slope: ${config.slope.toFixed(2)})<br>`;
+                            });
+                            
+                            if (data.weather_info.config_count > 1) {
+                                configsUsedHtml += `<span class="text-muted">Average Slope:</span> (${data.weather_info.total_slope.toFixed(2)} ÷ ${data.weather_info.config_count}) = <strong>${data.weather_info.slope_per_min.toFixed(2)}</strong><br>`;
+                            }
+                            
+                            // Add debugging information
+                            debugInfoHtml = `
+                                <div class="mt-3 p-2 bg-light border rounded">
+                                    <strong>🔍 Debug Information:</strong><br>
+                                    <span class="text-muted">Input Values:</span> Start=${startValue}, Target=${targetValue}, Current Temp=${data.weather_info.temperature}°C<br>
+                                    <span class="text-muted">Season Detection:</span> ${data.weather_info.season}<br>
+                                    <span class="text-muted">Ranges Found:</span> ${data.weather_info.config_count}<br>
+                                    <span class="text-muted">Total Slope Sum:</span> ${data.weather_info.total_slope.toFixed(2)}<br>
+                                    <span class="text-muted">Average Calculation:</span> ${data.weather_info.total_slope.toFixed(2)} ÷ ${data.weather_info.config_count} = ${data.weather_info.slope_per_min.toFixed(2)}<br>
+                                    <span class="text-muted">Slope Conversion:</span> ${data.weather_info.slope_per_min.toFixed(2)} ÷ 60 = ${data.weather_info.slope_per_sec.toFixed(4)} per second<br>
+                                    <span class="text-muted">Final Calculation:</span> ${valueDifference.toFixed(2)} ÷ ${data.weather_info.slope_per_sec.toFixed(4)} = ${data.time_to_achieve} seconds
+                                </div>
+                            `;
+                        }
+                        
+                        weatherDetails.innerHTML = `
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>🌤️ Weather Data:</strong><br>
+                                    <span class="text-muted">Temperature:</span> ${data.weather_info.temperature}°C<br>
+                                    <span class="text-muted">Humidity:</span> ${data.weather_info.humidity}%<br>
+                                    <span class="text-muted">Season:</span> ${data.weather_info.season}
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>📊 Calculation Details:</strong><br>
+                                    <span class="text-muted">Value Difference:</span> ${valueDifference.toFixed(2)}<br>
+                                    <span class="text-muted">Slope per Minute:</span> <strong>${data.weather_info.slope_per_min.toFixed(2)}</strong><br>
+                                    <span class="text-muted">Slope per Second:</span> ${data.weather_info.slope_per_sec.toFixed(4)}<br>
+                                    <span class="text-muted">Calculated Time:</span> <strong class="text-success">${data.time_to_achieve} seconds</strong>
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-12">
+                                    ${configsUsedHtml}
+                                </div>
+                            </div>
+                            <div class="row mt-2">
+                                <div class="col-12">
+                                    <small class="text-muted">
+                                        <strong>📐 Formula:</strong> Time = Value Difference ÷ Slope per Second<br>
+                                        <strong>🧮 Calculation:</strong> ${valueDifference.toFixed(2)} ÷ ${data.weather_info.slope_per_sec.toFixed(4)} = ${data.time_to_achieve} seconds
+                                    </small>
+                                </div>
+                            </div>
+                            ${debugInfoHtml}
+                        `;
+                        
+                        // Show weather info
+                        card.querySelector(`#weatherInfo_${codeId}`).style.display = 'block';
+                        
+                    } else {
+                        alert('Error calculating time: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error calculating time. Please try again.');
+                })
+                .finally(() => {
+                    btnEl.innerHTML = originalText;
+                    btnEl.disabled = false;
+                });
+            });
+        });
+        
         const modal = new bootstrap.Modal(document.getElementById('bulkEnableModal'));
         modal.show();
     });

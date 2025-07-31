@@ -1,0 +1,422 @@
+{% extends 'base.html' %}
+{% block title %}Configurations - Diagnostic Controller{% endblock %}
+
+{% block content %}
+<style>
+    .slope-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-left: 4px solid #003366;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .slope-header h3 {
+        margin: 0;
+        color: #003366;
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+    
+    .season-badge {
+        font-size: 0.8em;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+    
+    .season-badge.summer {
+        background-color: #ff6b35 !important;
+        color: white;
+    }
+    
+    .season-badge.fall {
+        background-color: #f39c12 !important;
+        color: white;
+    }
+    
+    .season-badge.winter {
+        background-color: #3498db !important;
+        color: white;
+    }
+    
+    .temp-range {
+        font-weight: 600;
+        color: #003366;
+    }
+    
+    .slope-value {
+        font-family: 'Courier New', monospace;
+        font-weight: 600;
+        background-color: #f8f9fa;
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .btn-group-action {
+        display: flex;
+        gap: 5px;
+        flex-wrap: nowrap;
+        min-width: 200px;
+        justify-content: flex-start;
+    }
+    
+    .btn-group-action form {
+        margin: 0;
+        white-space: nowrap;
+    }
+    
+    .btn-group-action button {
+        margin: 0;
+        white-space: nowrap;
+    }
+    
+    .btn-group-action a {
+        white-space: nowrap;
+    }
+    
+    .table th {
+        background-color: #003366;
+        color: white;
+        border-color: #003366;
+    }
+    
+    .table td {
+        vertical-align: middle;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6c757d;
+    }
+    
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 20px;
+        color: #dee2e6;
+    }
+</style>
+
+<div class="row justify-content-center">
+    <div class="col-md-12">
+        <!-- Header Section -->
+        <div class="slope-header">
+            <div class="d-flex justify-content-between align-items-center">
+                            <h3>
+                <i class="fas fa-cogs me-2"></i>Configurations
+            </h3>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('add_slope_configuration') }}" class="btn btn-danger">
+                        <i class="fas fa-thermometer-half me-1"></i>Add Temperature Config
+                    </a>
+                    <a href="{{ url_for('add_humidity_slope_configuration') }}" class="btn btn-info">
+                        <i class="fas fa-tint me-1"></i>Add Humidity Config
+                    </a>
+                    <a href="{{ url_for('add_season_temperature_range') }}" class="btn btn-success">
+                        <i class="fas fa-calendar-alt me-1"></i>Add Season Range
+                    </a>
+                </div>
+            </div>
+            <p class="mb-0 mt-2 text-muted">
+                Manage various system configurations including temperature and humidity slope settings
+            </p>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Temperature Configurations Table -->
+        <div class="card shadow mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-thermometer-half me-2"></i>Temperature Slope Configurations
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                {% if temp_configurations %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Temperature Range (°C)</th>
+                                <th class="text-center">
+                                    <span class="season-badge summer">Summer</span>
+                                    <br><small>Slope</small>
+                                </th>
+                                <th class="text-center">
+                                    <span class="season-badge fall">Fall</span>
+                                    <br><small>Slope</small>
+                                </th>
+                                <th class="text-center">
+                                    <span class="season-badge winter">Winter</span>
+                                    <br><small>Slope</small>
+                                </th>
+                                <th class="text-center">Last Updated</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for config in temp_configurations %}
+                            <tr>
+                                <td>
+                                    <span class="temp-range">{{ "%.1f"|format(config.temp_min) }}°C - {{ "%.1f"|format(config.temp_max) }}°C</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="slope-value">{{ "%.3f"|format(config.summer_slope) }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="slope-value">{{ "%.3f"|format(config.fall_slope) }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="slope-value">{{ "%.3f"|format(config.winter_slope) }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <small class="text-muted">
+                                        {% if config.updated_at %}
+                                            {{ config.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                            {{ config.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group-action">
+                                        <a href="{{ url_for('edit_slope_configuration', config_id=config.id) }}" 
+                                           class="btn btn-sm btn-outline-primary" 
+                                           title="Edit Configuration">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <form action="{{ url_for('delete_slope_configuration', config_id=config.id) }}" 
+                                              method="post" 
+                                              onsubmit="return confirm('Are you sure you want to delete this temperature slope configuration?')"
+                                              style="display: inline;">
+                                            <button type="submit" 
+                                                    class="btn btn-sm btn-outline-danger" 
+                                                    title="Delete Configuration">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center">
+                    <i class="fas fa-thermometer-half text-muted" style="font-size: 2rem;"></i>
+                    <p class="text-muted mt-2">No temperature configurations found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Humidity Configurations Table -->
+        <div class="card shadow">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-tint me-2"></i>Humidity Slope Configurations
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                {% if humidity_configurations %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Humidity Range (%)</th>
+                                <th class="text-center">
+                                    <span class="season-badge summer">Summer</span>
+                                    <br><small>Slope</small>
+                                </th>
+                                <th class="text-center">
+                                    <span class="season-badge fall">Fall</span>
+                                    <br><small>Slope</small>
+                                </th>
+                                <th class="text-center">
+                                    <span class="season-badge winter">Winter</span>
+                                    <br><small>Slope</small>
+                                </th>
+                                <th class="text-center">Last Updated</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for config in humidity_configurations %}
+                            <tr>
+                                <td>
+                                    <span class="temp-range">{{ "%.1f"|format(config.humidity_min) }}% - {{ "%.1f"|format(config.humidity_max) }}%</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="slope-value">{{ "%.3f"|format(config.summer_slope) }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="slope-value">{{ "%.3f"|format(config.fall_slope) }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="slope-value">{{ "%.3f"|format(config.winter_slope) }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <small class="text-muted">
+                                        {% if config.updated_at %}
+                                            {{ config.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                            {{ config.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group-action">
+                                        <a href="{{ url_for('edit_humidity_slope_configuration', config_id=config.id) }}" 
+                                           class="btn btn-sm btn-outline-primary" 
+                                           title="Edit Configuration">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <form action="{{ url_for('delete_humidity_slope_configuration', config_id=config.id) }}" 
+                                              method="post" 
+                                              onsubmit="return confirm('Are you sure you want to delete this humidity slope configuration?')"
+                                              style="display: inline;">
+                                            <button type="submit" 
+                                                    class="btn btn-sm btn-outline-danger" 
+                                                    title="Delete Configuration">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center">
+                    <i class="fas fa-tint text-muted" style="font-size: 2rem;"></i>
+                    <p class="text-muted mt-2">No humidity configurations found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Season Temperature Ranges Table -->
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-calendar-alt me-2"></i>Season Temperature Ranges
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                {% if season_ranges %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Season</th>
+                                <th>Temperature Range (°C)</th>
+                                <th class="text-center">Last Updated</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for config in season_ranges %}
+                            <tr>
+                                <td>
+                                    <span class="season-badge {{ config.season.lower() }}">{{ config.season }}</span>
+                                </td>
+                                <td>
+                                    <span class="temp-range">{{ "%.1f"|format(config.temp_min) }}°C - {{ "%.1f"|format(config.temp_max) }}°C</span>
+                                </td>
+                                <td class="text-center">
+                                    <small class="text-muted">
+                                        {% if config.updated_at %}
+                                            {{ config.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                            {{ config.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group-action">
+                                        <a href="{{ url_for('edit_season_temperature_range', config_id=config.id) }}" 
+                                           class="btn btn-sm btn-outline-primary" 
+                                           title="Edit Configuration">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <form action="{{ url_for('delete_season_temperature_range', config_id=config.id) }}" 
+                                              method="post" 
+                                              onsubmit="return confirm('Are you sure you want to delete this season temperature range?')"
+                                              style="display: inline;">
+                                            <button type="submit" 
+                                                    class="btn btn-sm btn-outline-danger" 
+                                                    title="Delete Configuration">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center">
+                    <i class="fas fa-calendar-alt text-muted" style="font-size: 2rem;"></i>
+                    <p class="text-muted mt-2">No season temperature ranges found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Empty State (if all tables are empty) -->
+        {% if not temp_configurations and not humidity_configurations and not season_ranges %}
+        <div class="card shadow">
+            <div class="card-body">
+                <div class="empty-state">
+                    <i class="fas fa-chart-line"></i>
+                    <h4>No Configurations Found</h4>
+                    <p class="mb-4">Get started by adding your first temperature or humidity slope configuration.</p>
+                    <div class="d-flex gap-2 justify-content-center">
+                        <a href="{{ url_for('add_slope_configuration') }}" class="btn btn-danger btn-lg">
+                            <i class="fas fa-thermometer-half me-2"></i>Add Temperature Config
+                        </a>
+                        <a href="{{ url_for('add_humidity_slope_configuration') }}" class="btn btn-info btn-lg">
+                            <i class="fas fa-tint me-2"></i>Add Humidity Config
+                        </a>
+                        <a href="{{ url_for('add_season_temperature_range') }}" class="btn btn-success btn-lg">
+                            <i class="fas fa-calendar-alt me-2"></i>Add Season Range
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Auto-dismiss flash messages after 5 seconds
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(function(alert) {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        });
+    }, 5000);
+});
+</script>
+{% endblock %} 

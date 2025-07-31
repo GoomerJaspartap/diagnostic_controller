@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Data Visualizer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            border-bottom: 2px solid #F47C20;
+        }
+        
+        .card {
+            border-radius: 12px;
+            border: none;
+        }
+        
+        .btn-primary {
+            background-color: #003366 !important;
+            border-color: #003366 !important;
+        }
+        
+        .btn-outline-primary {
+            color: #003366 !important;
+            border-color: #003366 !important;
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: #003366 !important;
+            color: #fff !important;
+        }
+        
+        h3, h2 {
+            color: #003366;
+        }
+        
+        .alert-danger {
+            background-color: #F47C20;
+            color: #fff;
+            border: none;
+        }
+        
+        /* Diagnostic color coding */
+        .status-pass {
+            background-color: #d4edda !important;
+            color: #155724 !important;
+        }
+        
+        .status-fail {
+            background-color: #f44336 !important;
+            color: #fff !important;
+        }
+        
+        .status-no-status {
+            background-color: #ffe066 !important;
+            color: #856404 !important;
+        }
+        
+        .text-pass {
+            color: #28a745 !important;
+        }
+        
+        .text-fail {
+            color: #dc3545 !important;
+        }
+        
+        .text-no-status {
+            color: #ffc107 !important;
+        }
+        
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px;
+            padding: 30px;
+        }
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px;
+            padding: 30px;
+        }
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: rgba(102, 126, 234, 0.05);
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.05);
+        }
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: rgba(40, 167, 69, 0.1);
+        }
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        .card {
+            border-radius: 15px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            font-weight: 600;
+        }
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+        .table {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .table th {
+            background: #f8f9fa;
+            border: none;
+            font-weight: 600;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner-border {
+            color: #667eea;
+        }
+        #graphContainer {
+            min-height: 500px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .parameter-group {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .parameter-group h6 {
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        .file-info {
+            background: #e3f2fd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .preview-table {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .nav-link {
+            color: #003366 !important;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        .nav-link:hover {
+            color: #0056b3 !important;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-light bg-white shadow-sm mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="#">
+                <img src="/static/logo.png" alt="Company Logo" style="height: 40px; margin-right: 10px;">
+                <span style="color: #003366; font-weight: bold;">Data Analysis Tools</span>
+            </a>
+            <div class="d-flex align-items-center">
+                <a href="/" class="nav-link me-3">
+                    <i class="fas fa-chart-line me-1"></i> Threshold Analysis
+                </a>
+                <a href="/graph_generator" class="nav-link">
+                    <i class="fas fa-chart-bar me-1"></i> Graph Generator
+                </a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container-fluid">
+        <div class="main-container">
+            <div class="text-center mb-4">
+                <h1 class="display-4" style="color: #003366;">
+                    <i class="fas fa-chart-line me-3"></i>
+                    Threshold Analysis
+                </h1>
+                <p class="lead text-muted">Upload your Excel file and visualize data with diagnostic threshold-based color coding</p>
+            </div>
+
+            <!-- File Upload Section -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-upload me-2"></i>
+                    Step 1: Upload Excel File
+                </div>
+                <div class="card-body">
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                        <h5>Drag and drop your Excel file here</h5>
+                        <p class="text-muted">or</p>
+                        <input type="file" id="fileInput" class="d-none" accept=".xlsx,.xls,.csv">
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-folder-open me-2"></i>
+                            Choose File
+                        </button>
+                        <p class="text-muted mt-3">Supported formats: .xlsx, .xls, .csv</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Information -->
+            <div id="fileInfo" class="file-info" style="display: none;">
+                <h6><i class="fas fa-info-circle me-2"></i>File Information</h6>
+                <div id="fileDetails"></div>
+            </div>
+
+            <!-- Sheet Selection -->
+            <div class="card" id="sheetSelection" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-table me-2"></i>
+                    Step 2: Select Sheet and Configure
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Important:</strong> Please select the sheet containing your data and configure any row skipping if needed.
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="sheetSelect" class="form-label">Sheet Name <span class="text-danger">*</span></label>
+                            <select class="form-select" id="sheetSelect" required>
+                                <option value="">Select a sheet...</option>
+                            </select>
+                            <div class="form-text">Choose the sheet that contains your time series data</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="skipRows" class="form-label">Skip Rows (Index)</label>
+                            <input type="number" class="form-control" id="skipRows" value="0" min="0">
+                            <div class="form-text">Row index to start reading from (0 = first row, 1 = second row, etc.)</div>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary btn-lg mt-3" onclick="loadSheetData()">
+                        <i class="fas fa-sync me-2"></i>
+                        Load Sheet Data
+                    </button>
+                </div>
+            </div>
+
+            <!-- Data Preview -->
+            <div class="card" id="dataPreview" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-eye me-2"></i>
+                    Data Preview
+                </div>
+                <div class="card-body">
+                    <div class="preview-table">
+                        <table class="table table-striped" id="previewTable">
+                            <thead id="previewHeader"></thead>
+                            <tbody id="previewBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graph Parameters -->
+            <div class="card" id="graphParameters" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-cog me-2"></i>
+                    Step 3: Configure Graph Parameters
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="parameter-group">
+                                <h6><i class="fas fa-chart-bar me-2"></i>Axis Configuration</h6>
+                                <div class="mb-3">
+                                    <label for="xAxis" class="form-label">X-Axis (Time Column)</label>
+                                    <select class="form-select" id="xAxis">
+                                        <option value="">Select time column...</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="yAxis" class="form-label">Y-Axis (Value Column)</label>
+                                    <select class="form-select" id="yAxis">
+                                        <option value="">Select value column...</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="parameter-group">
+                                <h6><i class="fas fa-clock me-2"></i>Expected Curve Time Range</h6>
+                                <div class="alert alert-info mb-3">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Time Range:</strong> Set the start time and the curve will automatically calculate the end time based on "Time to Achieve". 
+                                    The curve shows the expected path from start value to end value over this time period.
+                                </div>
+                                <div class="mb-3">
+                                    <label for="startTime" class="form-label">Start Time</label>
+                                    <input type="datetime-local" class="form-control" id="startTime">
+                                    <small class="form-text text-muted">When the expected curve should start</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="endTime" class="form-label">End Time</label>
+                                    <input type="datetime-local" class="form-control" id="endTime">
+                                    <small class="form-text text-muted">When the expected curve should end (must be after start time)</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="parameter-group">
+                                <h6><i class="fas fa-filter me-2"></i>Data Filter (Optional)</h6>
+                                <div class="mb-3">
+                                    <label for="dataStartTime" class="form-label">Data Start Time</label>
+                                    <input type="datetime-local" class="form-control" id="dataStartTime">
+                                    <small class="form-text text-muted">Optional: Filter data points from this time</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="dataEndTime" class="form-label">Data End Time</label>
+                                    <input type="datetime-local" class="form-control" id="dataEndTime">
+                                    <small class="form-text text-muted">Optional: Filter data points until this time</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="parameter-group">
+                                <h6><i class="fas fa-target me-2"></i>Target Values</h6>
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>Tip:</strong> Set different start and end values to see a meaningful trend. 
+                                    The expected curve will show the ideal path from start to end value over the specified time period.
+                                </div>
+                                <div class="mb-3">
+                                    <label for="startValue" class="form-label">Start Value (Initial Target)</label>
+                                    <input type="number" class="form-control" id="startValue" step="0.01" placeholder="e.g., 25.0">
+                                    <small class="form-text text-muted">The initial value you want to achieve</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="endValue" class="form-label">End Value (Final Target)</label>
+                                    <input type="number" class="form-control" id="endValue" step="0.01" placeholder="e.g., 50.0">
+                                    <small class="form-text text-muted">The final value you want to achieve</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="parameter-group">
+                                <h6><i class="fas fa-shield-alt me-2"></i>Threshold Settings</h6>
+                                <div class="mb-3">
+                                    <label for="threshold" class="form-label">Threshold</label>
+                                    <input type="number" class="form-control" id="threshold" step="0.01">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="steadyStateThreshold" class="form-label">Steady State Threshold (Optional)</label>
+                                    <input type="number" class="form-control" id="steadyStateThreshold" step="0.01">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="timeToAchieve" class="form-label">Time to Achieve (seconds)</label>
+                                    <input type="number" class="form-control" id="timeToAchieve" step="1">
+                                    <small class="form-text text-muted">Duration from start time to end time. End time will auto-update when you change this.</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary" onclick="loadSampleData()">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            Load Sample Data
+                        </button>
+                        <button class="btn btn-primary btn-lg" onclick="generateGraph()">
+                            <i class="fas fa-chart-line me-2"></i>
+                            Generate Graph
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading -->
+            <div class="loading" id="loading">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3">Processing your data...</p>
+            </div>
+
+            <!-- Graph Display -->
+            <div class="card" id="graphDisplay" style="display: none;">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fas fa-chart-line me-2"></i>
+                        Visualization Results
+                    </div>
+                    <div>
+                        <button class="btn btn-outline-success btn-sm me-2" onclick="downloadStandaloneHTML()">
+                            <i class="fas fa-download me-1"></i>
+                            Download HTML
+                        </button>
+                        <button class="btn btn-outline-primary btn-sm" onclick="toggleFullscreen()">
+                            <i class="fas fa-expand me-1"></i>
+                            Fullscreen
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <!-- Status Summary -->
+                    <div id="statusSummary" class="mb-4" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-pass">
+                                            <i class="fas fa-check-circle me-2"></i>Pass
+                                        </h5>
+                                        <h3 class="text-pass" id="passCount">0</h3>
+                                        <p class="text-muted" id="passPercentage">0%</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-fail">
+                                            <i class="fas fa-times-circle me-2"></i>Fail
+                                        </h5>
+                                        <h3 class="text-fail" id="failCount">0</h3>
+                                        <p class="text-muted" id="failPercentage">0%</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-primary">
+                                            <i class="fas fa-chart-bar me-2"></i>Total
+                                        </h5>
+                                        <h3 class="text-primary" id="totalCount">0</h3>
+                                        <p class="text-muted">Data Points</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card text-center">
+                                    <div class="card-body">
+                                        <h5 class="card-title text-info">
+                                            <i class="fas fa-percentage me-2"></i>Success Rate
+                                        </h5>
+                                        <h3 class="text-info" id="successRate">0%</h3>
+                                        <p class="text-muted">Overall</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="graphContainer"></div>
+                </div>
+            </div>
+
+            <!-- Alerts -->
+            <div id="alerts"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentFile = null;
+        let currentData = null;
+
+        // File upload handling
+        document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+        
+        // Auto-update end time when start time or time to achieve changes
+        document.getElementById('startTime').addEventListener('change', updateEndTime);
+        document.getElementById('timeToAchieve').addEventListener('change', updateEndTime);
+        
+        // Drag and drop
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                document.getElementById('fileInput').files = files;
+                handleFileSelect();
+            }
+        });
+
+        function handleFileSelect() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            showLoading('Uploading file...');
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    currentFile = data.filename;
+                    currentData = data; // Store the upload response data
+                    showFileInfo(data);
+                    loadSheetNames();
+                } else {
+                    showAlert('error', data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('error', 'Error uploading file: ' + error.message);
+            });
+        }
+
+        function showFileInfo(data) {
+            document.getElementById('fileInfo').style.display = 'block';
+            document.getElementById('fileDetails').innerHTML = `
+                <p><strong>Filename:</strong> ${data.filename || 'N/A'}</p>
+                <p><strong>Total Sheets:</strong> ${data.sheets ? data.sheets.length : 'N/A'}</p>
+                <p><strong>Available Sheets:</strong> ${data.sheets ? data.sheets.join(', ') : 'N/A'}</p>
+                <p><strong>Columns in First Sheet:</strong> ${data.columns ? data.columns.length : 'N/A'}</p>
+            `;
+        }
+
+        function loadSheetNames() {
+            // If we already have sheet information from the upload, use it
+            if (currentData && currentData.sheets) {
+                const select = document.getElementById('sheetSelect');
+                select.innerHTML = '<option value="">Select a sheet...</option>';
+                currentData.sheets.forEach(sheet => {
+                    const option = document.createElement('option');
+                    option.value = sheet;
+                    option.textContent = sheet;
+                    select.appendChild(option);
+                });
+                document.getElementById('sheetSelection').style.display = 'block';
+                
+                // Show a success message
+                showAlert('success', `File uploaded successfully! Found ${currentData.sheets.length} sheet(s). Please select the sheet containing your data.`);
+                return;
+            }
+            
+            // Fallback to API call if needed
+            fetch('/get_sheet_names', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ filename: currentFile })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.sheets) {
+                    const select = document.getElementById('sheetSelect');
+                    select.innerHTML = '<option value="">Select a sheet...</option>';
+                    data.sheets.forEach(sheet => {
+                        const option = document.createElement('option');
+                        option.value = sheet;
+                        option.textContent = sheet;
+                        select.appendChild(option);
+                    });
+                    document.getElementById('sheetSelection').style.display = 'block';
+                    
+                    // Show a success message
+                    showAlert('success', `File uploaded successfully! Found ${data.sheets.length} sheet(s). Please select the sheet containing your data.`);
+                } else {
+                    showAlert('error', data.error);
+                }
+            })
+            .catch(error => {
+                showAlert('error', 'Error loading sheet names: ' + error.message);
+            });
+        }
+
+        function loadSheetData() {
+            const sheetName = document.getElementById('sheetSelect').value;
+            const skipRows = parseInt(document.getElementById('skipRows').value) || 0;
+
+            if (!sheetName) {
+                showAlert('error', 'Please select a sheet');
+                return;
+            }
+
+            showLoading('Loading sheet data...');
+
+            fetch('/load_sheet_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: currentFile,
+                    sheet_name: sheetName,
+                    skip_rows: skipRows
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    currentData = data;
+                    showDataPreview(data);
+                    setupGraphParameters(data);
+                    showAlert('success', `Successfully loaded sheet "${sheetName}" with ${data.preview.length} sample rows.`);
+                } else {
+                    showAlert('error', data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('error', 'Error loading sheet data: ' + error.message);
+            });
+        }
+
+        function showDataPreview(data) {
+            const header = document.getElementById('previewHeader');
+            const body = document.getElementById('previewBody');
+            
+            // Create header
+            header.innerHTML = '';
+            const headerRow = document.createElement('tr');
+            data.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                headerRow.appendChild(th);
+            });
+            header.appendChild(headerRow);
+
+            // Create body
+            body.innerHTML = '';
+            data.preview.forEach(row => {
+                const tr = document.createElement('tr');
+                data.columns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.textContent = row[col] !== null ? row[col] : '';
+                    tr.appendChild(td);
+                });
+                body.appendChild(tr);
+            });
+
+            document.getElementById('dataPreview').style.display = 'block';
+        }
+
+        function setupGraphParameters(data) {
+            // Setup X-axis options
+            const xAxis = document.getElementById('xAxis');
+            xAxis.innerHTML = '<option value="">Select time column...</option>';
+            if (data.datetime_columns.length === 0) {
+                xAxis.innerHTML += '<option value="" disabled>No datetime columns found</option>';
+            } else {
+                data.datetime_columns.forEach(col => {
+                    const option = document.createElement('option');
+                    option.value = col;
+                    option.textContent = col;
+                    xAxis.appendChild(option);
+                });
+            }
+
+            // Setup Y-axis options
+            const yAxis = document.getElementById('yAxis');
+            yAxis.innerHTML = '<option value="">Select value column...</option>';
+            if (data.numeric_columns.length === 0) {
+                yAxis.innerHTML += '<option value="" disabled>No numeric columns found</option>';
+            } else {
+                data.numeric_columns.forEach(col => {
+                    const option = document.createElement('option');
+                    option.value = col;
+                    option.textContent = col;
+                    yAxis.appendChild(option);
+                });
+            }
+
+            document.getElementById('graphParameters').style.display = 'block';
+            
+            // Show guidance if no suitable columns found
+            if (data.datetime_columns.length === 0 || data.numeric_columns.length === 0) {
+                let message = 'Note: ';
+                if (data.datetime_columns.length === 0) {
+                    message += 'No datetime columns detected. ';
+                }
+                if (data.numeric_columns.length === 0) {
+                    message += 'No numeric columns detected. ';
+                }
+                message += 'Please ensure your data contains time/datetime columns and numeric value columns.';
+                showAlert('warning', message);
+            }
+        }
+
+        function updateEndTime() {
+            const startTime = document.getElementById('startTime').value;
+            const timeToAchieve = document.getElementById('timeToAchieve').value;
+            
+            if (startTime && timeToAchieve) {
+                const startTimeObj = new Date(startTime);
+                const endTimeObj = new Date(startTimeObj.getTime() + (parseInt(timeToAchieve) * 1000));
+                document.getElementById('endTime').value = endTimeObj.toISOString().slice(0, 16);
+            }
+        }
+
+        function generateGraph() {
+            const xAxis = document.getElementById('xAxis').value;
+            const yAxis = document.getElementById('yAxis').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+            const dataStartTime = document.getElementById('dataStartTime').value;
+            const dataEndTime = document.getElementById('dataEndTime').value;
+            const startValue = document.getElementById('startValue').value;
+            const endValue = document.getElementById('endValue').value;
+            const threshold = document.getElementById('threshold').value;
+            const steadyStateThreshold = document.getElementById('steadyStateThreshold').value;
+            const timeToAchieve = document.getElementById('timeToAchieve').value;
+
+            // Validation
+            if (!xAxis || !yAxis || !startTime || !endTime || !startValue || !endValue || !threshold || !timeToAchieve) {
+                showAlert('error', 'Please fill in all required fields');
+                return;
+            }
+
+            // Validate that end time is after start time
+            const startTimeObj = new Date(startTime);
+            const endTimeObj = new Date(endTime);
+            if (endTimeObj <= startTimeObj) {
+                showAlert('error', 'End Time must be after Start Time. Please correct the time range.');
+                return;
+            }
+
+            // Debug: Show the values being sent
+            console.log('Debug - Values being sent:');
+            console.log('Start Value:', startValue);
+            console.log('End Value:', endValue);
+            console.log('Start Time:', startTime);
+            console.log('End Time:', endTime);
+            console.log('Time to Achieve:', timeToAchieve);
+
+            // Check if start and end values are the same
+            if (parseFloat(startValue) === parseFloat(endValue)) {
+                showAlert('warning', 'Start and End values are the same. The expected curve will be a horizontal line. Consider setting different values for a meaningful trend analysis.');
+            }
+
+            showLoading('Generating graph...');
+
+            fetch('/generate_graph', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: currentFile,
+                    sheet_name: document.getElementById('sheetSelect').value,
+                    skip_rows: parseInt(document.getElementById('skipRows').value) || 0,
+                    x_axis: xAxis,
+                    y_axis: yAxis,
+                    start_time: startTime,
+                    end_time: endTime,
+                    data_start_time: dataStartTime || null,
+                    data_end_time: dataEndTime || null,
+                    start_value: startValue,
+                    end_value: endValue,
+                    threshold: threshold,
+                    steady_state_threshold: steadyStateThreshold || null,
+                    time_to_achieve: timeToAchieve
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    displayGraph(data.graph, data.status_summary);
+                } else {
+                    showAlert('error', data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('error', 'Error generating graph: ' + error.message);
+            });
+        }
+
+        function displayGraph(graphData, statusSummary) {
+            const graphJson = JSON.parse(graphData);
+            const container = document.getElementById('graphContainer');
+            
+            // Store the plot reference for fullscreen functionality
+            window.currentPlot = container;
+            
+            Plotly.newPlot(container, graphJson.data, graphJson.layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                displaylogo: false
+            });
+            
+            // Update status summary if available
+            if (statusSummary) {
+                updateStatusSummary(statusSummary);
+            }
+            
+            document.getElementById('graphDisplay').style.display = 'block';
+        }
+        
+        function updateStatusSummary(summary) {
+            document.getElementById('passCount').textContent = summary.pass_count;
+            document.getElementById('failCount').textContent = summary.fail_count;
+            document.getElementById('totalCount').textContent = summary.total_points;
+            document.getElementById('passPercentage').textContent = summary.pass_percentage.toFixed(1) + '%';
+            document.getElementById('failPercentage').textContent = summary.fail_percentage.toFixed(1) + '%';
+            document.getElementById('successRate').textContent = summary.pass_percentage.toFixed(1) + '%';
+            
+            document.getElementById('statusSummary').style.display = 'block';
+        }
+
+        function showLoading(message) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').querySelector('p').textContent = message;
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function loadSampleData() {
+            // Set sample values to demonstrate the expected curve behavior
+            document.getElementById('startValue').value = '25.0';
+            document.getElementById('endValue').value = '50.0';
+            document.getElementById('threshold').value = '5.0';
+            document.getElementById('steadyStateThreshold').value = '2.0';
+            document.getElementById('timeToAchieve').value = '1800';
+            
+            // Set sample time range for expected curve
+            const now = new Date();
+            const startTime = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes ago
+            const endTime = new Date(startTime.getTime() + 1800 * 1000); // Start time + 30 minutes (1800 seconds)
+            
+            document.getElementById('startTime').value = startTime.toISOString().slice(0, 16);
+            document.getElementById('endTime').value = endTime.toISOString().slice(0, 16);
+            
+            // Set optional data filter (shorter range for demonstration)
+            const dataStartTime = new Date(now.getTime() - 15 * 60 * 1000); // 15 minutes ago
+            const dataEndTime = new Date(now.getTime() + 15 * 60 * 1000);   // 15 minutes from now
+            
+            document.getElementById('dataStartTime').value = dataStartTime.toISOString().slice(0, 16);
+            document.getElementById('dataEndTime').value = dataEndTime.toISOString().slice(0, 16);
+            
+            showAlert('success', 'Sample data loaded! Expected curve: 25°C to 50°C over 30 minutes. Data filter: 15 minutes range.');
+        }
+
+        function showAlert(type, message) {
+            const alerts = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            let alertClass = 'alert-';
+            let icon = '';
+            
+            switch(type) {
+                case 'error':
+                    alertClass += 'danger';
+                    icon = 'exclamation-triangle';
+                    break;
+                case 'success':
+                    alertClass += 'success';
+                    icon = 'check-circle';
+                    break;
+                case 'warning':
+                    alertClass += 'warning';
+                    icon = 'exclamation-triangle';
+                    break;
+                default:
+                    alertClass += 'info';
+                    icon = 'info-circle';
+            }
+            
+            alert.className = `alert ${alertClass} alert-dismissible fade show`;
+            alert.innerHTML = `
+                <i class="fas fa-${icon} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            alerts.appendChild(alert);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.remove();
+                }
+            }, 5000);
+        }
+
+        function downloadStandaloneHTML() {
+            if (!currentFile) {
+                showAlert('error', 'No file loaded. Please upload and generate a graph first.');
+                return;
+            }
+
+            showLoading('Generating standalone HTML...');
+
+            // Get current parameters
+            const xAxis = document.getElementById('xAxis').value;
+            const yAxis = document.getElementById('yAxis').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+            const dataStartTime = document.getElementById('dataStartTime').value;
+            const dataEndTime = document.getElementById('dataEndTime').value;
+            const startValue = document.getElementById('startValue').value;
+            const endValue = document.getElementById('endValue').value;
+            const threshold = document.getElementById('threshold').value;
+            const steadyStateThreshold = document.getElementById('steadyStateThreshold').value;
+            const timeToAchieve = document.getElementById('timeToAchieve').value;
+
+            fetch('/download_standalone_html', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: currentFile,
+                    sheet_name: document.getElementById('sheetSelect').value,
+                    skip_rows: parseInt(document.getElementById('skipRows').value) || 0,
+                    x_axis: xAxis,
+                    y_axis: yAxis,
+                    start_time: startTime,
+                    end_time: endTime,
+                    data_start_time: dataStartTime || null,
+                    data_end_time: dataEndTime || null,
+                    start_value: startValue,
+                    end_value: endValue,
+                    threshold: threshold,
+                    steady_state_threshold: steadyStateThreshold || null,
+                    time_to_achieve: timeToAchieve
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success) {
+                    // Create and download the HTML file
+                    const blob = new Blob([data.html_content], { type: 'text/html' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'threshold_analysis_results.html';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    showAlert('success', 'Standalone HTML file downloaded successfully!');
+                } else {
+                    showAlert('error', data.error);
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                showAlert('error', 'Error downloading HTML: ' + error.message);
+            });
+        }
+
+        function toggleFullscreen() {
+            const graphContainer = document.getElementById('graphContainer');
+            if (graphContainer) {
+                if (!document.fullscreenElement) {
+                    // Enter fullscreen
+                    graphContainer.requestFullscreen().then(() => {
+                        // Resize the plot to fit fullscreen
+                        if (window.currentPlot) {
+                            Plotly.relayout(window.currentPlot, {
+                                width: window.innerWidth,
+                                height: window.innerHeight
+                            });
+                        }
+                    }).catch(err => {
+                        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+                        showAlert('error', 'Fullscreen mode not supported or blocked.');
+                    });
+                } else {
+                    // Exit fullscreen
+                    document.exitFullscreen().then(() => {
+                        // Resize the plot back to normal
+                        if (window.currentPlot) {
+                            Plotly.relayout(window.currentPlot, {
+                                width: null,
+                                height: null
+                            });
+                        }
+                    });
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

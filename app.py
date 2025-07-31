@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 import datetime
 from datetime import datetime
 from datetime import timedelta
+import requests
+import json
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -144,6 +146,64 @@ def init_db():
         )
     ''')
     
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS slope_configurations (
+            id SERIAL PRIMARY KEY,
+            temp_min REAL NOT NULL,
+            temp_max REAL NOT NULL,
+            summer_slope REAL NOT NULL,
+            fall_slope REAL NOT NULL,
+            winter_slope REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS humidity_slope_configurations (
+            id SERIAL PRIMARY KEY,
+            humidity_min REAL NOT NULL,
+            humidity_max REAL NOT NULL,
+            summer_slope REAL NOT NULL,
+            fall_slope REAL NOT NULL,
+            winter_slope REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS season_temperature_ranges (
+            id SERIAL PRIMARY KEY,
+            season VARCHAR(50) NOT NULL,
+            temp_min REAL NOT NULL,
+            temp_max REAL NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(season)
+        )
+    ''')
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS location_config (
+            id SERIAL PRIMARY KEY,
+            city VARCHAR(255) NOT NULL,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            is_default BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Insert default location (Oshawa) if no locations exist
+    c.execute('SELECT COUNT(*) FROM location_config')
+    if c.fetchone()[0] == 0:
+        c.execute('''
+            INSERT INTO location_config (city, latitude, longitude, is_default)
+            VALUES ('Oshawa', 43.8971, -78.8658, TRUE)
+        ''')
+    
     # Check if default user exists
     c.execute('SELECT 1 FROM users WHERE username = %s', ('user',))
     if not c.fetchone():
@@ -179,6 +239,152 @@ def is_valid_email(email):
 def is_valid_phone(phone):
     # Must start with +, then 1-3 digits (country code), then exactly 10 digits
     return re.match(r"^\+[0-9]{1,3}[0-9]{10}$", phone)
+
+# --- Weather and Slope Calculation Functions ---
+def get_current_weather():
+    """Get current weather from Open-Meteo API for the configured location"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('SELECT latitude, longitude FROM location_config WHERE is_default = TRUE')
+        location = c.fetchone()
+        conn.close()
+        
+        if not location:
+            return None, "No default location configured"
+        
+        latitude, longitude = location
+        
+        # Open-Meteo API call
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            current = data.get('current', {})
+            return {
+                'temperature': current.get('temperature_2m'),
+                'humidity': current.get('relative_humidity_2m')
+            }, None
+        else:
+            return None, f"Weather API error: {response.status_code}"
+            
+    except Exception as e:
+        return None, f"Error fetching weather: {str(e)}"
+
+def get_season_from_temperature(temperature):
+    """Determine season based on current temperature and configured ranges"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('SELECT season, temp_min, temp_max FROM season_temperature_ranges ORDER BY temp_min')
+        ranges = c.fetchall()
+        conn.close()
+        
+        for season, temp_min, temp_max in ranges:
+            if temp_min <= temperature <= temp_max:
+                return season
+        
+        return "Unknown"  # If temperature doesn't fall in any configured range
+        
+    except Exception as e:
+        return "Unknown"
+
+def calculate_average_slope(start_value, target_value, temperature, humidity, code_type):
+    """Calculate average slope based on temperature/humidity ranges and season"""
+    try:
+        # Get current season based on temperature
+        season = get_season_from_temperature(temperature)
+        
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        if code_type == 'Temperature':
+            # Get temperature slope configurations that overlap with the START and TARGET value range
+            # We need to find all ranges that contain any part of the start_value to target_value range
+            c.execute('''
+                SELECT temp_min, temp_max, summer_slope, fall_slope, winter_slope 
+                FROM slope_configurations 
+                WHERE (temp_min <= %s AND temp_max >= %s) OR  -- Start value falls in range
+                      (temp_min <= %s AND temp_max >= %s) OR  -- Target value falls in range
+                      (temp_min >= %s AND temp_max <= %s) OR  -- Range is completely within start-target
+                      (temp_min <= %s AND temp_max >= %s)     -- Range completely contains start-target
+                ORDER BY temp_min
+            ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+        else:  # Humidity
+            # Get humidity slope configurations that overlap with the START and TARGET value range
+            c.execute('''
+                SELECT humidity_min, humidity_max, summer_slope, fall_slope, winter_slope 
+                FROM humidity_slope_configurations 
+                WHERE (humidity_min <= %s AND humidity_max >= %s) OR  -- Start value falls in range
+                      (humidity_min <= %s AND humidity_max >= %s) OR  -- Target value falls in range
+                      (humidity_min >= %s AND humidity_max <= %s) OR  -- Range is completely within start-target
+                      (humidity_min <= %s AND humidity_max >= %s)     -- Range completely contains start-target
+                ORDER BY humidity_min
+            ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+        
+        configs = c.fetchall()
+        conn.close()
+        
+        if not configs:
+            return None, f"No slope configuration found for {code_type.lower()} range from {start_value} to {target_value}"
+        
+        # Calculate average slope across all matching configurations
+        total_slope = 0
+        config_count = 0
+        used_configs = []
+        
+        for config in configs:
+            # Get the appropriate slope for the current season
+            if season == 'Summer':
+                slope_per_min = config[2]  # summer_slope
+            elif season == 'Fall':
+                slope_per_min = config[3]  # fall_slope
+            elif season == 'Winter':
+                slope_per_min = config[4]  # winter_slope
+            else:
+                # Default to summer slope if season is unknown
+                slope_per_min = config[2]
+            
+            total_slope += slope_per_min
+            config_count += 1
+            
+            # Store config details for debugging
+            if code_type == 'Temperature':
+                used_configs.append({
+                    'range': f"{config[0]}°C - {config[1]}°C",
+                    'slope': slope_per_min
+                })
+            else:
+                used_configs.append({
+                    'range': f"{config[0]}% - {config[1]}%",
+                    'slope': slope_per_min
+                })
+        
+        # Calculate average slope
+        average_slope_per_min = total_slope / config_count
+        
+        # Convert slope per minute to slope per second
+        slope_per_sec = average_slope_per_min / 60.0
+        
+        # Calculate time to achieve target
+        value_difference = abs(target_value - start_value)
+        time_to_achieve_seconds = value_difference / slope_per_sec if slope_per_sec > 0 else 0
+        
+        return {
+            'slope_per_min': average_slope_per_min,
+            'slope_per_sec': slope_per_sec,
+            'time_to_achieve_seconds': time_to_achieve_seconds,
+            'season': season,
+            'current_temperature': temperature,
+            'current_humidity': humidity,
+            'configs_used': used_configs,
+            'config_count': config_count,
+            'total_slope': total_slope
+        }, None
+        
+    except Exception as e:
+        return None, f"Error calculating slope: {str(e)}"
 
 # --- Routes ---
 @app.route('/', methods=['GET', 'POST'])
@@ -939,32 +1145,161 @@ def update_diagnostic_params(code_id):
         threshold = data.get('threshold')
         steady_state_threshold = data.get('steady_state_threshold')
         time_to_achieve = data.get('time_to_achieve')
-        if None in [start_value, target_value, threshold, steady_state_threshold, time_to_achieve]:
+        use_weather_calculation = data.get('use_weather_calculation', False)
+        
+        if None in [start_value, target_value, threshold, steady_state_threshold]:
             return jsonify({'success': False, 'error': 'All parameters are required'}), 400
+        
         conn = psycopg2.connect(**DB_CONFIG)
         c = conn.cursor()
+        
+        # Get diagnostic code type
+        c.execute('SELECT type FROM diagnostic_codes WHERE id = %s', (code_id,))
+        code_result = c.fetchone()
+        if not code_result:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
+        
+        code_type = code_result[0]
+        
+        # If weather calculation is requested, calculate time_to_achieve
+        if use_weather_calculation:
+            # Get current weather
+            weather_data, weather_error = get_current_weather()
+            if weather_error:
+                conn.close()
+                return jsonify({'success': False, 'error': f'Weather error: {weather_error}'}), 400
+            
+            # Calculate slope and time based on weather
+            slope_result, slope_error = calculate_average_slope(
+                start_value, target_value, 
+                weather_data['temperature'], 
+                weather_data['humidity'], 
+                code_type
+            )
+            
+            if slope_error:
+                conn.close()
+                return jsonify({'success': False, 'error': f'Slope calculation error: {slope_error}'}), 400
+            
+            # Use calculated time_to_achieve
+            time_to_achieve = int(slope_result['time_to_achieve_seconds'])
+            
+            # Store weather and slope information for reference
+            weather_info = {
+                'temperature': weather_data['temperature'],
+                'humidity': weather_data['humidity'],
+                'season': slope_result['season'],
+                'slope_per_min': slope_result['slope_per_min'],
+                'slope_per_sec': slope_result['slope_per_sec'],
+                'configs_used': slope_result['configs_used'],
+                'config_count': slope_result['config_count'],
+                'total_slope': slope_result['total_slope']
+            }
+        else:
+            # Use provided time_to_achieve
+            if time_to_achieve is None:
+                conn.close()
+                return jsonify({'success': False, 'error': 'Time to achieve is required when not using weather calculation'}), 400
+            weather_info = None
+        
         # Get current time in America/New_York timezone
         try:
             now_est = datetime.now(ZoneInfo('America/New_York'))
         except Exception:
             import pytz
             now_est = datetime.now(pytz.timezone('America/New_York'))
-        # Update the diagnostic parameters and enable the code (no upper/lower limit)
+        
+        # Update the diagnostic parameters and enable the code
         c.execute('''
             UPDATE diagnostic_codes 
             SET start_value = %s, target_value = %s, threshold = %s, steady_state_threshold = %s,
                 time_to_achieve = %s, enabled = 1, enabled_at = %s
             WHERE id = %s
         ''', (start_value, target_value, threshold, steady_state_threshold, time_to_achieve, now_est, code_id))
-        if c.rowcount == 0:
-            conn.close()
-            return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
+        
         conn.commit()
         conn.close()
+        
+        response_data = {
+            'success': True,
+            'message': 'Diagnostic parameters updated and code enabled successfully',
+            'time_to_achieve': time_to_achieve
+        }
+        
+        if weather_info:
+            response_data['weather_info'] = weather_info
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/calculate_time_from_weather/<int:code_id>', methods=['POST'])
+@login_required
+def calculate_time_from_weather(code_id):
+    """Calculate time based on weather without enabling the diagnostic code"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        start_value = data.get('start_value')
+        target_value = data.get('target_value')
+        
+        if None in [start_value, target_value]:
+            return jsonify({'success': False, 'error': 'Start value and target value are required'}), 400
+        
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Get diagnostic code type
+        c.execute('SELECT type FROM diagnostic_codes WHERE id = %s', (code_id,))
+        code_result = c.fetchone()
+        if not code_result:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
+        
+        code_type = code_result[0]
+        conn.close()
+        
+        # Get current weather
+        weather_data, weather_error = get_current_weather()
+        if weather_error:
+            return jsonify({'success': False, 'error': f'Weather error: {weather_error}'}), 400
+        
+        # Calculate slope and time based on weather
+        slope_result, slope_error = calculate_average_slope(
+            start_value, target_value, 
+            weather_data['temperature'], 
+            weather_data['humidity'], 
+            code_type
+        )
+        
+        if slope_error:
+            return jsonify({'success': False, 'error': f'Slope calculation error: {slope_error}'}), 400
+        
+        # Calculate time to achieve
+        time_to_achieve = int(slope_result['time_to_achieve_seconds'])
+        
+        # Store weather and slope information for reference
+        weather_info = {
+            'temperature': weather_data['temperature'],
+            'humidity': weather_data['humidity'],
+            'season': slope_result['season'],
+            'slope_per_min': slope_result['slope_per_min'],
+            'slope_per_sec': slope_result['slope_per_sec'],
+            'configs_used': slope_result['configs_used'],
+            'config_count': slope_result['config_count'],
+            'total_slope': slope_result['total_slope']
+        }
+        
         return jsonify({
             'success': True,
-            'message': 'Diagnostic parameters updated and code enabled successfully'
+            'time_to_achieve': time_to_achieve,
+            'weather_info': weather_info
         })
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -1441,6 +1776,596 @@ def bulk_disable_diagnostic_codes():
         return jsonify({'success': True, 'message': 'Selected diagnostic codes disabled successfully'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# Configuration Routes
+@app.route('/configurations')
+@login_required
+def configurations():
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    # Fetch temperature configurations
+    c.execute('''
+        SELECT id, temp_min, temp_max, summer_slope, fall_slope, winter_slope, created_at, updated_at
+        FROM slope_configurations
+        ORDER BY temp_min ASC
+    ''')
+    temp_configurations = []
+    for row in c.fetchall():
+        temp_configurations.append({
+            'id': row[0],
+            'temp_min': row[1],
+            'temp_max': row[2],
+            'summer_slope': row[3],
+            'fall_slope': row[4],
+            'winter_slope': row[5],
+            'created_at': row[6],
+            'updated_at': row[7]
+        })
+    
+    # Fetch humidity configurations
+    c.execute('''
+        SELECT id, humidity_min, humidity_max, summer_slope, fall_slope, winter_slope, created_at, updated_at
+        FROM humidity_slope_configurations
+        ORDER BY humidity_min ASC
+    ''')
+    humidity_configurations = []
+    for row in c.fetchall():
+        humidity_configurations.append({
+            'id': row[0],
+            'humidity_min': row[1],
+            'humidity_max': row[2],
+            'summer_slope': row[3],
+            'fall_slope': row[4],
+            'winter_slope': row[5],
+            'created_at': row[6],
+            'updated_at': row[7]
+        })
+    
+    # Fetch season temperature ranges
+    c.execute('''
+        SELECT id, season, temp_min, temp_max, created_at, updated_at
+        FROM season_temperature_ranges
+        ORDER BY 
+            CASE season 
+                WHEN 'Summer' THEN 1 
+                WHEN 'Fall' THEN 2 
+                WHEN 'Winter' THEN 3 
+                ELSE 4 
+            END
+    ''')
+    season_ranges = []
+    for row in c.fetchall():
+        season_ranges.append({
+            'id': row[0],
+            'season': row[1],
+            'temp_min': row[2],
+            'temp_max': row[3],
+            'created_at': row[4],
+            'updated_at': row[5]
+        })
+    
+    conn.close()
+    return render_template('configurations.html', 
+                         temp_configurations=temp_configurations, 
+                         humidity_configurations=humidity_configurations,
+                         season_ranges=season_ranges)
+
+@app.route('/add_slope_configuration', methods=['GET', 'POST'])
+@login_required
+def add_slope_configuration():
+    if request.method == 'POST':
+        try:
+            temp_min = float(request.form['temp_min'])
+            temp_max = float(request.form['temp_max'])
+            summer_slope = float(request.form['summer_slope'])
+            fall_slope = float(request.form['fall_slope'])
+            winter_slope = float(request.form['winter_slope'])
+            
+            if temp_min >= temp_max:
+                flash('Minimum temperature must be less than maximum temperature', 'error')
+                return redirect(url_for('configurations'))
+            
+            conn = psycopg2.connect(**DB_CONFIG)
+            c = conn.cursor()
+            
+            # Check for overlapping temperature ranges
+            c.execute('''
+                SELECT id FROM slope_configurations 
+                WHERE (temp_min <= %s AND temp_max >= %s) 
+                   OR (temp_min <= %s AND temp_max >= %s)
+                   OR (temp_min >= %s AND temp_max <= %s)
+            ''', (temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
+            
+            if c.fetchone():
+                flash('Temperature range overlaps with existing configuration', 'error')
+                conn.close()
+                return redirect(url_for('configurations'))
+            
+            c.execute('''
+                INSERT INTO slope_configurations (temp_min, temp_max, summer_slope, fall_slope, winter_slope)
+                VALUES (%s, %s, %s, %s, %s)
+            ''', (temp_min, temp_max, summer_slope, fall_slope, winter_slope))
+            
+            conn.commit()
+            conn.close()
+            flash('Slope configuration added successfully', 'success')
+            return redirect(url_for('configurations'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values', 'error')
+            return redirect(url_for('configurations'))
+        except Exception as e:
+            flash(f'Error adding slope configuration: {str(e)}', 'error')
+            return redirect(url_for('configurations'))
+    
+    return render_template('add_slope_configuration.html')
+
+@app.route('/add_humidity_slope_configuration', methods=['GET', 'POST'])
+@login_required
+def add_humidity_slope_configuration():
+    if request.method == 'POST':
+        try:
+            humidity_min = float(request.form['humidity_min'])
+            humidity_max = float(request.form['humidity_max'])
+            summer_slope = float(request.form['summer_slope'])
+            fall_slope = float(request.form['fall_slope'])
+            winter_slope = float(request.form['winter_slope'])
+            
+            if humidity_min >= humidity_max:
+                flash('Minimum humidity must be less than maximum humidity', 'error')
+                return redirect(url_for('configurations'))
+            
+            conn = psycopg2.connect(**DB_CONFIG)
+            c = conn.cursor()
+            
+            # Check for overlapping humidity ranges
+            c.execute('''
+                SELECT id FROM humidity_slope_configurations 
+                WHERE (humidity_min <= %s AND humidity_max >= %s) 
+                   OR (humidity_min <= %s AND humidity_max >= %s)
+                   OR (humidity_min >= %s AND humidity_max <= %s)
+            ''', (humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
+            
+            if c.fetchone():
+                flash('Humidity range overlaps with existing configuration', 'error')
+                conn.close()
+                return redirect(url_for('configurations'))
+            
+            c.execute('''
+                INSERT INTO humidity_slope_configurations (humidity_min, humidity_max, summer_slope, fall_slope, winter_slope)
+                VALUES (%s, %s, %s, %s, %s)
+            ''', (humidity_min, humidity_max, summer_slope, fall_slope, winter_slope))
+            
+            conn.commit()
+            conn.close()
+            flash('Humidity slope configuration added successfully', 'success')
+            return redirect(url_for('configurations'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values', 'error')
+            return redirect(url_for('configurations'))
+        except Exception as e:
+            flash(f'Error adding humidity slope configuration: {str(e)}', 'error')
+            return redirect(url_for('configurations'))
+    
+    return render_template('add_humidity_slope_configuration.html')
+
+@app.route('/edit_slope_configuration/<int:config_id>', methods=['GET', 'POST'])
+@login_required
+def edit_slope_configuration(config_id):
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    if request.method == 'POST':
+        try:
+            temp_min = float(request.form['temp_min'])
+            temp_max = float(request.form['temp_max'])
+            summer_slope = float(request.form['summer_slope'])
+            fall_slope = float(request.form['fall_slope'])
+            winter_slope = float(request.form['winter_slope'])
+            
+            if temp_min >= temp_max:
+                flash('Minimum temperature must be less than maximum temperature', 'error')
+                return redirect(url_for('configurations'))
+            
+            # Check for overlapping temperature ranges (excluding current record)
+            c.execute('''
+                SELECT id FROM slope_configurations 
+                WHERE id != %s AND (
+                    (temp_min <= %s AND temp_max >= %s) 
+                    OR (temp_min <= %s AND temp_max >= %s)
+                    OR (temp_min >= %s AND temp_max <= %s)
+                )
+            ''', (config_id, temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
+            
+            if c.fetchone():
+                flash('Temperature range overlaps with existing configuration', 'error')
+                conn.close()
+                return redirect(url_for('configurations'))
+            
+            c.execute('''
+                UPDATE slope_configurations 
+                SET temp_min = %s, temp_max = %s, summer_slope = %s, fall_slope = %s, winter_slope = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            ''', (temp_min, temp_max, summer_slope, fall_slope, winter_slope, config_id))
+            
+            conn.commit()
+            conn.close()
+            flash('Slope configuration updated successfully', 'success')
+            return redirect(url_for('configurations'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values', 'error')
+            return redirect(url_for('configurations'))
+        except Exception as e:
+            flash(f'Error updating slope configuration: {str(e)}', 'error')
+            return redirect(url_for('configurations'))
+    
+    # GET request - fetch current configuration
+    c.execute('SELECT id, temp_min, temp_max, summer_slope, fall_slope, winter_slope FROM slope_configurations WHERE id = %s', (config_id,))
+    config = c.fetchone()
+    conn.close()
+    
+    if not config:
+        flash('Slope configuration not found', 'error')
+        return redirect(url_for('configurations'))
+    
+    return render_template('edit_slope_configuration.html', config={
+        'id': config[0],
+        'temp_min': config[1],
+        'temp_max': config[2],
+        'summer_slope': config[3],
+        'fall_slope': config[4],
+        'winter_slope': config[5]
+    })
+
+@app.route('/edit_humidity_slope_configuration/<int:config_id>', methods=['GET', 'POST'])
+@login_required
+def edit_humidity_slope_configuration(config_id):
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    if request.method == 'POST':
+        try:
+            humidity_min = float(request.form['humidity_min'])
+            humidity_max = float(request.form['humidity_max'])
+            summer_slope = float(request.form['summer_slope'])
+            fall_slope = float(request.form['fall_slope'])
+            winter_slope = float(request.form['winter_slope'])
+            
+            if humidity_min >= humidity_max:
+                flash('Minimum humidity must be less than maximum humidity', 'error')
+                return redirect(url_for('configurations'))
+            
+            # Check for overlapping humidity ranges (excluding current record)
+            c.execute('''
+                SELECT id FROM humidity_slope_configurations 
+                WHERE id != %s AND (
+                    (humidity_min <= %s AND humidity_max >= %s) 
+                    OR (humidity_min <= %s AND humidity_max >= %s)
+                    OR (humidity_min >= %s AND humidity_max <= %s)
+                )
+            ''', (config_id, humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
+            
+            if c.fetchone():
+                flash('Humidity range overlaps with existing configuration', 'error')
+                conn.close()
+                return redirect(url_for('configurations'))
+            
+            c.execute('''
+                UPDATE humidity_slope_configurations 
+                SET humidity_min = %s, humidity_max = %s, summer_slope = %s, fall_slope = %s, winter_slope = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            ''', (humidity_min, humidity_max, summer_slope, fall_slope, winter_slope, config_id))
+            
+            conn.commit()
+            conn.close()
+            flash('Humidity slope configuration updated successfully', 'success')
+            return redirect(url_for('configurations'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values', 'error')
+            return redirect(url_for('configurations'))
+        except Exception as e:
+            flash(f'Error updating humidity slope configuration: {str(e)}', 'error')
+            return redirect(url_for('configurations'))
+    
+    # GET request - fetch current configuration
+    c.execute('SELECT id, humidity_min, humidity_max, summer_slope, fall_slope, winter_slope FROM humidity_slope_configurations WHERE id = %s', (config_id,))
+    config = c.fetchone()
+    conn.close()
+    
+    if not config:
+        flash('Humidity slope configuration not found', 'error')
+        return redirect(url_for('configurations'))
+    
+    return render_template('edit_humidity_slope_configuration.html', config={
+        'id': config[0],
+        'humidity_min': config[1],
+        'humidity_max': config[2],
+        'summer_slope': config[3],
+        'fall_slope': config[4],
+        'winter_slope': config[5]
+    })
+
+@app.route('/delete_slope_configuration/<int:config_id>', methods=['POST'])
+@login_required
+def delete_slope_configuration(config_id):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('DELETE FROM slope_configurations WHERE id = %s', (config_id,))
+        conn.commit()
+        conn.close()
+        flash('Slope configuration deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting slope configuration: {str(e)}', 'error')
+    
+    return redirect(url_for('configurations'))
+
+@app.route('/delete_humidity_slope_configuration/<int:config_id>', methods=['POST'])
+@login_required
+def delete_humidity_slope_configuration(config_id):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('DELETE FROM humidity_slope_configurations WHERE id = %s', (config_id,))
+        conn.commit()
+        conn.close()
+        flash('Humidity slope configuration deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting humidity slope configuration: {str(e)}', 'error')
+    
+    return redirect(url_for('configurations'))
+
+@app.route('/add_season_temperature_range', methods=['GET', 'POST'])
+@login_required
+def add_season_temperature_range():
+    if request.method == 'POST':
+        try:
+            season = request.form['season']
+            temp_min = float(request.form['temp_min'])
+            temp_max = float(request.form['temp_max'])
+            
+            if temp_min >= temp_max:
+                flash('Minimum temperature must be less than maximum temperature', 'error')
+                return redirect(url_for('configurations'))
+            
+            conn = psycopg2.connect(**DB_CONFIG)
+            c = conn.cursor()
+            
+            # Check if season already exists
+            c.execute('SELECT id FROM season_temperature_ranges WHERE season = %s', (season,))
+            if c.fetchone():
+                flash(f'Season "{season}" already has a temperature range configured', 'error')
+                conn.close()
+                return redirect(url_for('configurations'))
+            
+            c.execute('''
+                INSERT INTO season_temperature_ranges (season, temp_min, temp_max)
+                VALUES (%s, %s, %s)
+            ''', (season, temp_min, temp_max))
+            
+            conn.commit()
+            conn.close()
+            flash(f'{season} temperature range added successfully', 'success')
+            return redirect(url_for('configurations'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values', 'error')
+            return redirect(url_for('configurations'))
+        except Exception as e:
+            flash(f'Error adding season temperature range: {str(e)}', 'error')
+            return redirect(url_for('configurations'))
+    
+    return render_template('add_season_temperature_range.html')
+
+@app.route('/edit_season_temperature_range/<int:config_id>', methods=['GET', 'POST'])
+@login_required
+def edit_season_temperature_range(config_id):
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    if request.method == 'POST':
+        try:
+            season = request.form['season']
+            temp_min = float(request.form['temp_min'])
+            temp_max = float(request.form['temp_max'])
+            
+            if temp_min >= temp_max:
+                flash('Minimum temperature must be less than maximum temperature', 'error')
+                return redirect(url_for('configurations'))
+            
+            c.execute('''
+                UPDATE season_temperature_ranges 
+                SET season = %s, temp_min = %s, temp_max = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            ''', (season, temp_min, temp_max, config_id))
+            
+            conn.commit()
+            conn.close()
+            flash(f'{season} temperature range updated successfully', 'success')
+            return redirect(url_for('configurations'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values', 'error')
+            return redirect(url_for('configurations'))
+        except Exception as e:
+            flash(f'Error updating season temperature range: {str(e)}', 'error')
+            return redirect(url_for('configurations'))
+    
+    # GET request - fetch current configuration
+    c.execute('SELECT id, season, temp_min, temp_max FROM season_temperature_ranges WHERE id = %s', (config_id,))
+    config = c.fetchone()
+    conn.close()
+    
+    if not config:
+        flash('Season temperature range not found', 'error')
+        return redirect(url_for('configurations'))
+    
+    return render_template('edit_season_temperature_range.html', config={
+        'id': config[0],
+        'season': config[1],
+        'temp_min': config[2],
+        'temp_max': config[3]
+    })
+
+@app.route('/delete_season_temperature_range/<int:config_id>', methods=['POST'])
+@login_required
+def delete_season_temperature_range(config_id):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        c.execute('DELETE FROM season_temperature_ranges WHERE id = %s', (config_id,))
+        conn.commit()
+        conn.close()
+        flash('Season temperature range deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting season temperature range: {str(e)}', 'error')
+    
+    return redirect(url_for('configurations'))
+
+# Location Configuration Routes
+@app.route('/location_config')
+@login_required
+def location_config():
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    c.execute('''
+        SELECT id, city, latitude, longitude, is_default, created_at, updated_at
+        FROM location_config
+        ORDER BY is_default DESC, city ASC
+    ''')
+    
+    locations = []
+    for row in c.fetchall():
+        locations.append({
+            'id': row[0],
+            'city': row[1],
+            'latitude': row[2],
+            'longitude': row[3],
+            'is_default': row[4],
+            'created_at': row[5],
+            'updated_at': row[6]
+        })
+    
+    conn.close()
+    return render_template('location_config.html', locations=locations)
+
+@app.route('/add_location', methods=['GET', 'POST'])
+@login_required
+def add_location():
+    if request.method == 'POST':
+        try:
+            city = request.form['city']
+            latitude = float(request.form['latitude'])
+            longitude = float(request.form['longitude'])
+            is_default = 'is_default' in request.form
+            
+            conn = psycopg2.connect(**DB_CONFIG)
+            c = conn.cursor()
+            
+            # If this is set as default, unset other defaults
+            if is_default:
+                c.execute('UPDATE location_config SET is_default = FALSE')
+            
+            c.execute('''
+                INSERT INTO location_config (city, latitude, longitude, is_default)
+                VALUES (%s, %s, %s, %s)
+            ''', (city, latitude, longitude, is_default))
+            
+            conn.commit()
+            conn.close()
+            flash('Location added successfully', 'success')
+            return redirect(url_for('location_config'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values for latitude and longitude', 'error')
+            return redirect(url_for('location_config'))
+        except Exception as e:
+            flash(f'Error adding location: {str(e)}', 'error')
+            return redirect(url_for('location_config'))
+    
+    return render_template('add_location.html')
+
+@app.route('/edit_location/<int:location_id>', methods=['GET', 'POST'])
+@login_required
+def edit_location(location_id):
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    if request.method == 'POST':
+        try:
+            city = request.form['city']
+            latitude = float(request.form['latitude'])
+            longitude = float(request.form['longitude'])
+            is_default = 'is_default' in request.form
+            
+            # If this is set as default, unset other defaults
+            if is_default:
+                c.execute('UPDATE location_config SET is_default = FALSE')
+            
+            c.execute('''
+                UPDATE location_config 
+                SET city = %s, latitude = %s, longitude = %s, is_default = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            ''', (city, latitude, longitude, is_default, location_id))
+            
+            conn.commit()
+            conn.close()
+            flash('Location updated successfully', 'success')
+            return redirect(url_for('location_config'))
+            
+        except ValueError:
+            flash('Please enter valid numeric values for latitude and longitude', 'error')
+            return redirect(url_for('location_config'))
+        except Exception as e:
+            flash(f'Error updating location: {str(e)}', 'error')
+            return redirect(url_for('location_config'))
+    
+    # GET request - fetch current location
+    c.execute('SELECT id, city, latitude, longitude, is_default FROM location_config WHERE id = %s', (location_id,))
+    location = c.fetchone()
+    conn.close()
+    
+    if not location:
+        flash('Location not found', 'error')
+        return redirect(url_for('location_config'))
+    
+    return render_template('edit_location.html', location={
+        'id': location[0],
+        'city': location[1],
+        'latitude': location[2],
+        'longitude': location[3],
+        'is_default': location[4]
+    })
+
+@app.route('/delete_location/<int:location_id>', methods=['POST'])
+@login_required
+def delete_location(location_id):
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Check if this is the default location
+        c.execute('SELECT is_default FROM location_config WHERE id = %s', (location_id,))
+        location = c.fetchone()
+        
+        if location and location[0]:
+            flash('Cannot delete the default location. Please set another location as default first.', 'error')
+            conn.close()
+            return redirect(url_for('location_config'))
+        
+        c.execute('DELETE FROM location_config WHERE id = %s', (location_id,))
+        conn.commit()
+        conn.close()
+        flash('Location deleted successfully', 'success')
+    except Exception as e:
+        flash(f'Error deleting location: {str(e)}', 'error')
+    
+    return redirect(url_for('location_config'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True) 

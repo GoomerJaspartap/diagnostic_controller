@@ -1,0 +1,322 @@
+{% extends 'base.html' %}
+{% block title %}Edit Humidity Slope Configuration - Diagnostic Controller{% endblock %}
+
+{% block content %}
+<style>
+    .form-header {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-left: 4px solid #17a2b8;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .form-header h3 {
+        margin: 0;
+        color: #003366;
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+    
+    .season-section {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background-color: #f8f9fa;
+    }
+    
+    .season-title {
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .season-badge {
+        font-size: 0.8em;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+    
+    .season-badge.summer {
+        background-color: #ff6b35 !important;
+        color: white;
+    }
+    
+    .season-badge.fall {
+        background-color: #f39c12 !important;
+        color: white;
+    }
+    
+    .season-badge.winter {
+        background-color: #3498db !important;
+        color: white;
+    }
+    
+    .form-label {
+        font-weight: 600;
+        color: #003366;
+    }
+    
+    .help-text {
+        font-size: 0.875em;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+    
+    .humidity-range-section {
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border: 1px solid #17a2b8;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .humidity-range-title {
+        color: #0c5460;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .current-values {
+        background-color: #e8f5e8;
+        border: 1px solid #28a745;
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .current-values h5 {
+        color: #155724;
+        margin-bottom: 10px;
+        font-size: 1rem;
+    }
+    
+    .current-value-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 5px 0;
+        border-bottom: 1px solid #c3e6cb;
+    }
+    
+    .current-value-item:last-child {
+        border-bottom: none;
+    }
+    
+    .current-value-label {
+        font-weight: 600;
+        color: #155724;
+    }
+    
+    .current-value-data {
+        font-family: 'Courier New', monospace;
+        font-weight: 600;
+        color: #003366;
+        background-color: #f8f9fa;
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+    }
+</style>
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <!-- Header Section -->
+        <div class="form-header">
+            <h3>
+                <i class="fas fa-edit me-2"></i>Edit Humidity Slope Configuration
+            </h3>
+            <p class="mb-0 mt-2 text-muted">
+                Modify the humidity range and slope values for different seasons
+            </p>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Current Values Display -->
+        <div class="current-values">
+            <h5><i class="fas fa-info-circle me-1"></i>Current Configuration</h5>
+            <div class="current-value-item">
+                <span class="current-value-label">Humidity Range:</span>
+                <span class="current-value-data">{{ "%.1f"|format(config.humidity_min) }}% - {{ "%.1f"|format(config.humidity_max) }}%</span>
+            </div>
+            <div class="current-value-item">
+                <span class="current-value-label">Summer Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.summer_slope) }}</span>
+            </div>
+            <div class="current-value-item">
+                <span class="current-value-label">Fall Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.fall_slope) }}</span>
+            </div>
+            <div class="current-value-item">
+                <span class="current-value-label">Winter Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.winter_slope) }}</span>
+            </div>
+        </div>
+
+        <!-- Form -->
+        <div class="card shadow">
+            <div class="card-body">
+                <form method="POST">
+                    <!-- Humidity Range Section -->
+                    <div class="humidity-range-section">
+                        <div class="humidity-range-title">
+                            <i class="fas fa-tint"></i>
+                            Humidity Range
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="humidity_min" class="form-label">Minimum Humidity (%)</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="humidity_min" 
+                                       name="humidity_min" 
+                                       step="0.1" 
+                                       required 
+                                       value="{{ "%.1f"|format(config.humidity_min) }}"
+                                       placeholder="e.g., 40.0">
+                                <div class="help-text">Enter the lower bound of the humidity range</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="humidity_max" class="form-label">Maximum Humidity (%)</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="humidity_max" 
+                                       name="humidity_max" 
+                                       step="0.1" 
+                                       required 
+                                       value="{{ "%.1f"|format(config.humidity_max) }}"
+                                       placeholder="e.g., 60.0">
+                                <div class="help-text">Enter the upper bound of the humidity range</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Summer Slope Section -->
+                    <div class="season-section">
+                        <div class="season-title">
+                            <span class="season-badge summer">Summer</span>
+                            <span>Summer Season Slope</span>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label for="summer_slope" class="form-label">Summer Slope Value</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="summer_slope" 
+                                       name="summer_slope" 
+                                       step="0.001" 
+                                       required 
+                                       value="{{ "%.3f"|format(config.summer_slope) }}"
+                                       placeholder="e.g., 0.125">
+                                <div class="help-text">Enter the slope value for summer season calculations</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fall Slope Section -->
+                    <div class="season-section">
+                        <div class="season-title">
+                            <span class="season-badge fall">Fall</span>
+                            <span>Fall Season Slope</span>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label for="fall_slope" class="form-label">Fall Slope Value</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="fall_slope" 
+                                       name="fall_slope" 
+                                       step="0.001" 
+                                       required 
+                                       value="{{ "%.3f"|format(config.fall_slope) }}"
+                                       placeholder="e.g., 0.150">
+                                <div class="help-text">Enter the slope value for fall season calculations</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Winter Slope Section -->
+                    <div class="season-section">
+                        <div class="season-title">
+                            <span class="season-badge winter">Winter</span>
+                            <span>Winter Season Slope</span>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label for="winter_slope" class="form-label">Winter Slope Value</label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="winter_slope" 
+                                       name="winter_slope" 
+                                       step="0.001" 
+                                       required 
+                                       value="{{ "%.3f"|format(config.winter_slope) }}"
+                                       placeholder="e.g., 0.175">
+                                <div class="help-text">Enter the slope value for winter season calculations</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <a href="{{ url_for('configurations') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Back to Configurations
+                        </a>
+                        <button type="submit" class="btn btn-info">
+                            <i class="fas fa-save me-1"></i>Update Configuration
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Form validation
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const humidityMin = document.getElementById('humidity_min');
+    const humidityMax = document.getElementById('humidity_max');
+    
+    form.addEventListener('submit', function(e) {
+        const min = parseFloat(humidityMin.value);
+        const max = parseFloat(humidityMax.value);
+        
+        if (min >= max) {
+            e.preventDefault();
+            alert('Minimum humidity must be less than maximum humidity');
+            return false;
+        }
+    });
+    
+    // Auto-dismiss flash messages after 5 seconds
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(function(alert) {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        });
+    }, 5000);
+});
+</script>
+{% endblock %} 

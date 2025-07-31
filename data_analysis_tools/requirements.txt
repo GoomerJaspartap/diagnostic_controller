@@ -1,0 +1,15 @@
+flask
+psycopg2-binary
+werkzeug
+python-dotenv
+pymodbus==3.3.2
+xhtml2pdf
+twilio
+paho-mqtt==1.6.1
+pandas
+plotly
+openpyxl
+numpy
+scipy
+matplotlib
+seaborn 

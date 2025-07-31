@@ -1,0 +1,101 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.card {
+    border-radius: 12px;
+    border: none;
+}
+
+.btn-primary {
+    background-color: #003366 !important;
+    border-color: #003366 !important;
+}
+
+.btn-outline-primary {
+    color: #003366 !important;
+    border-color: #003366 !important;
+}
+
+.btn-outline-primary:hover {
+    background-color: #003366 !important;
+    color: #fff !important;
+}
+
+.navbar {
+    border-bottom: 2px solid #F47C20;
+}
+
+h3, h2 {
+    color: #003366;
+}
+
+.alert-danger {
+    background-color: #F47C20;
+    color: #fff;
+    border: none;
+}
+
+/* Action button group for diagnostic codes */
+.btn-group-action {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+.btn-group-action form {
+    margin: 0;
+    padding: 0;
+    display: inline;
+}
+.btn-group-action .btn {
+    margin-right: 0;
+    min-width: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@media (max-width: 767px) {
+  .table-responsive table, 
+  .table-responsive thead, 
+  .table-responsive tbody, 
+  .table-responsive th, 
+  .table-responsive td, 
+  .table-responsive tr {
+    display: block;
+    width: 100%;
+  }
+  .table-responsive thead tr {
+    display: none;
+  }
+  .table-responsive tr {
+    margin-bottom: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(30,42,80,0.04);
+    padding: 10px;
+  }
+  .table-responsive td {
+    position: relative;
+    padding-left: 50%;
+    min-height: 40px;
+    border: none;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+  }
+  .table-responsive td:before {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    width: 45%;
+    white-space: nowrap;
+    font-weight: bold;
+    color: #003366;
+    content: attr(data-label);
+  }
+  .btn-group-action {
+    flex-direction: column;
+    gap: 8px;
+  }
+} 

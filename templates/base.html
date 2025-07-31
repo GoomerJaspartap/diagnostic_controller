@@ -23,6 +23,16 @@
                 <a href="/rooms" class="btn btn-success me-2" style="background-color: #28a745; border-color: #28a745; color: #fff;">Rooms</a>
                 <a href="/contacts" class="btn btn-info me-2" style="background-color: #003366; border-color: #003366; color: #fff;">Emergency Contacts</a>
                 <a href="/diagnostic_codes" class="btn btn-warning me-2" style="background-color: #F4D03F; border-color: #F4D03F; color: #003366;">Diagnostic Codes</a>
+                {% if request.path.startswith('/configurations') %}
+                <a href="/configurations" class="btn me-2 btn-primary text-white" style="border-color: #003366;">Configurations</a>
+                {% else %}
+                <a href="/configurations" class="btn me-2 btn-outline-primary" style="color: #003366; border-color: #003366;">Configurations</a>
+                {% endif %}
+                {% if request.path.startswith('/location_config') %}
+                <a href="/location_config" class="btn me-2 btn-primary text-white" style="border-color: #003366;">Location</a>
+                {% else %}
+                <a href="/location_config" class="btn me-2 btn-outline-primary" style="color: #003366; border-color: #003366;">Location</a>
+                {% endif %}
                 {% if request.path.startswith('/status_log') %}
                 <a href="/status_log" class="btn me-2 btn-primary text-white" style="border-color: #003366;">Status Log</a>
                 {% else %}
@@ -45,6 +55,16 @@
                         <a href="/rooms" class="btn btn-success mb-2" style="background-color: #28a745; border-color: #28a745; color: #fff;">Rooms</a>
                         <a href="/contacts" class="btn btn-info mb-2" style="background-color: #003366; border-color: #003366; color: #fff;">Emergency Contacts</a>
                         <a href="/diagnostic_codes" class="btn btn-warning mb-2" style="background-color: #F4D03F; border-color: #F4D03F; color: #003366;">Diagnostic Codes</a>
+                        {% if request.path.startswith('/configurations') %}
+                        <a href="/configurations" class="btn mb-2 btn-primary text-white" style="border-color: #003366;">Configurations</a>
+                        {% else %}
+                        <a href="/configurations" class="btn mb-2 btn-outline-primary" style="color: #003366; border-color: #003366;">Configurations</a>
+                        {% endif %}
+                        {% if request.path.startswith('/location_config') %}
+                        <a href="/location_config" class="btn mb-2 btn-primary text-white" style="border-color: #003366;">Location</a>
+                        {% else %}
+                        <a href="/location_config" class="btn mb-2 btn-outline-primary" style="color: #003366; border-color: #003366;">Location</a>
+                        {% endif %}
                         {% if request.path.startswith('/status_log') %}
                         <a href="/status_log" class="btn mb-2 btn-primary text-white" style="border-color: #003366;">Status Log</a>
                         {% else %}
