@@ -319,6 +319,89 @@
             50% { transform: scale(1.1); }
             100% { transform: scale(1); }
         }
+        
+        .progress {
+            height: 25px;
+            border-radius: 12px;
+            background-color: #e9ecef;
+        }
+        
+        .progress-bar {
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        
+        .file-count-badge {
+            font-size: 0.9rem;
+            padding: 0.5rem 0.75rem;
+        }
+        
+        .large-file-warning {
+            border-left: 4px solid #ffc107;
+            background-color: rgba(255, 193, 7, 0.1);
+        }
+        
+        .processing-stats {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .stat-value {
+            font-weight: 700;
+            color: #003366;
+        }
+
+        
+        .common-sheet-section {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border: 2px solid #2196f3;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .common-sheet-section h6 {
+            color: #1976d2;
+            font-weight: 700;
+        }
+        
+        .common-sheet-alert {
+            background-color: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #ffc107;
+            border-radius: 8px;
+        }
+        
+        .sheet-select-highlight {
+            background-color: rgba(76, 175, 80, 0.1);
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .sheet-select-highlight:hover {
+            background-color: rgba(76, 175, 80, 0.2);
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
@@ -394,6 +477,7 @@
                 <div class="card-header">
                     <i class="fas fa-list me-2"></i>
                     Uploaded Files
+                    <span class="badge bg-primary ms-2 file-count-badge" id="fileCount">0 files</span>
                     <button class="btn btn-sm btn-outline-light float-end" onclick="toggleReorderMode()" id="reorderBtn">
                         <i class="fas fa-arrows-alt me-1"></i>
                         Reorder Files
@@ -403,6 +487,10 @@
                     <div class="alert alert-info" id="reorderInfo" style="display: none;">
                         <i class="fas fa-info-circle me-2"></i>
                         <strong>Reorder Mode:</strong> Use the Move Up/Down buttons or drag and drop files to change their order. The order determines how files will be combined.
+                    </div>
+                    <div class="alert alert-warning large-file-warning" id="largeFileWarning" style="display: none;">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Large Dataset Detected:</strong> You have uploaded a large number of files. The system will process them in batches for optimal performance.
                     </div>
                     <div class="file-list" id="fileList">
                         <!-- Files will be listed here -->
@@ -421,6 +509,40 @@
                         <i class="fas fa-info-circle me-2"></i>
                         <strong>Note:</strong> For Excel files (.xlsx, .xls), please select the sheet containing your data. CSV files will use the default sheet.
                     </div>
+                    
+                    <!-- Common Sheet Selection -->
+                    <div class="common-sheet-section" id="commonSheetSection" style="display: none;">
+                        <h6><i class="fas fa-layer-group me-2"></i>Common Sheet Selection</h6>
+                        <div class="alert alert-warning common-sheet-alert">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            <strong>Quick Setup:</strong> If all your Excel files have the same sheet name, you can select it once for all files.
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">Common Sheet Name</label>
+                                <select class="form-select" id="commonSheetSelect">
+                                    <option value="">Select a common sheet...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 d-flex align-items-end">
+                                <button class="btn btn-outline-primary" onclick="applyCommonSheet()" id="applyCommonBtn" disabled>
+                                    <i class="fas fa-check me-2"></i>
+                                    Apply to All Files
+                                </button>
+                                <button class="btn btn-outline-secondary ms-2" onclick="clearCommonSheet()" id="clearCommonBtn" disabled>
+                                    <i class="fas fa-times me-2"></i>
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                This will automatically set the selected sheet for all Excel files that contain it.
+                            </small>
+                        </div>
+                    </div>
+                    
                     <div id="sheetConfig">
                         <!-- Sheet configuration will be generated here -->
                     </div>
@@ -438,6 +560,12 @@
                     Combined Data Results
                 </div>
                 <div class="card-body">
+                    <!-- Processing Statistics -->
+                    <div class="processing-stats" id="processingStats" style="display: none;">
+                        <h6><i class="fas fa-chart-line me-2"></i>Processing Statistics</h6>
+                        <div id="statsContent"></div>
+                    </div>
+                    
                     <div class="row">
                         <div class="col-md-6">
                             <h6><i class="fas fa-info-circle me-2"></i>Summary</h6>
@@ -450,10 +578,16 @@
                                     <i class="fas fa-file-csv me-2"></i>
                                     Download CSV
                                 </button>
-                                <button class="btn btn-primary" onclick="downloadCombinedData('xlsx')">
+                                <button class="btn btn-primary" onclick="downloadCombinedData('xlsx')" id="excelDownloadBtn">
                                     <i class="fas fa-file-excel me-2"></i>
                                     Download Excel
                                 </button>
+                            </div>
+                            <div id="excelStatus" class="mt-2" style="display: none;">
+                                <small class="text-warning">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    Excel generation failed or timed out. CSV format recommended for large datasets.
+                                </small>
                             </div>
                         </div>
                     </div>
@@ -481,6 +615,18 @@
                 <span class="visually-hidden">Loading...</span>
             </div>
             <p class="mt-3" id="loadingText">Processing...</p>
+            <div class="progress mt-3" style="width: 300px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     id="progressBar" 
+                     style="width: 0%" 
+                     aria-valuenow="0" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">0%</div>
+            </div>
+            <div class="mt-2" id="progressDetails">
+                <small class="text-muted">Processing files...</small>
+            </div>
         </div>
     </div>
 
@@ -554,11 +700,39 @@
                 fileList.appendChild(fileItem);
             }
 
+            // Update file count
+            updateFileCount();
+            
+            // Show large file warning if needed
+            if (files.length > 100) {
+                document.getElementById('largeFileWarning').style.display = 'block';
+            } else {
+                document.getElementById('largeFileWarning').style.display = 'none';
+            }
+
             document.getElementById('fileListCard').style.display = 'block';
             showAlert('success', `Successfully uploaded ${files.length} file(s)`);
             
             // Generate sheet configuration
             generateSheetConfig();
+        }
+
+        function updateFileCount() {
+            const count = uploadedFiles.length;
+            const fileCountElement = document.getElementById('fileCount');
+            fileCountElement.textContent = `${count} file${count !== 1 ? 's' : ''}`;
+            
+            // Update badge color based on count
+            fileCountElement.className = 'badge ms-2';
+            if (count > 200) {
+                fileCountElement.classList.add('bg-danger');
+            } else if (count > 100) {
+                fileCountElement.classList.add('bg-warning');
+            } else if (count > 50) {
+                fileCountElement.classList.add('bg-info');
+            } else {
+                fileCountElement.classList.add('bg-primary');
+            }
         }
 
         function toggleReorderMode() {
@@ -745,6 +919,16 @@
                 fileList.appendChild(fileItem);
             });
 
+            // Update file count
+            updateFileCount();
+            
+            // Show large file warning if needed
+            if (uploadedFiles.length > 100) {
+                document.getElementById('largeFileWarning').style.display = 'block';
+            } else {
+                document.getElementById('largeFileWarning').style.display = 'none';
+            }
+
             // Re-enable reorder mode if it was active
             if (reorderMode) {
                 const fileItems = document.querySelectorAll('.file-item');
@@ -770,6 +954,45 @@
         function generateSheetConfig() {
             const configDiv = document.getElementById('sheetConfig');
             configDiv.innerHTML = '';
+
+            // Check if we have Excel files to show common sheet option
+            const excelFiles = uploadedFiles.filter(file => !file.name.toLowerCase().endsWith('.csv'));
+            
+            if (excelFiles.length > 1 && excelFiles.length <= 100) {
+                // Show common sheet section only for reasonable dataset sizes
+                document.getElementById('commonSheetSection').style.display = 'block';
+                loadCommonSheets();
+            } else if (excelFiles.length > 100) {
+                // For very large datasets, show a manual input option
+                document.getElementById('commonSheetSection').style.display = 'block';
+                document.getElementById('commonSheetSection').innerHTML = `
+                    <h6><i class="fas fa-layer-group me-2"></i>Common Sheet Selection</h6>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Large Dataset Detected:</strong> Common sheet detection is disabled for datasets with more than 100 files to improve performance.
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Manual Sheet Name</label>
+                            <input type="text" class="form-control" id="manualSheetName" placeholder="e.g., Sheet1, Data, SR1">
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <button class="btn btn-outline-primary" onclick="applyManualSheet()">
+                                <i class="fas fa-check me-2"></i>
+                                Apply to All Files
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            If you know the common sheet name across your files, you can enter it manually.
+                        </small>
+                    </div>
+                `;
+            } else {
+                document.getElementById('commonSheetSection').style.display = 'none';
+            }
 
             uploadedFiles.forEach((file, index) => {
                 const fileDiv = document.createElement('div');
@@ -803,6 +1026,67 @@
             document.getElementById('sheetConfigCard').style.display = 'block';
         }
 
+        function loadCommonSheets() {
+            const formData = new FormData();
+            uploadedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+
+            fetch('/get_common_sheets', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 413) {
+                        throw new Error('Request too large. Common sheet detection is not available for this many files.');
+                    } else {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const select = document.getElementById('commonSheetSelect');
+                    select.innerHTML = '<option value="">Select a common sheet...</option>';
+                    
+                    if (data.common_sheets && data.common_sheets.length > 0) {
+                        data.common_sheets.forEach(sheet => {
+                            const option = document.createElement('option');
+                            option.value = sheet;
+                            option.textContent = sheet;
+                            select.appendChild(option);
+                        });
+                        
+                        // Enable apply button if common sheets found
+                        document.getElementById('applyCommonBtn').disabled = false;
+                        
+                        // Show info about common sheets
+                        showAlert('info', `Found ${data.common_sheets.length} common sheet(s) across ${data.files_with_sheets} Excel files.`);
+                    } else {
+                        showAlert('warning', 'No common sheets found across all Excel files. You will need to select sheets individually.');
+                    }
+                } else {
+                    showAlert('error', data.error || 'Error loading common sheets');
+                }
+            })
+            .catch(error => {
+                console.error('Error loading common sheets:', error);
+                
+                // Replace the common sheet section with an error message
+                document.getElementById('commonSheetSection').innerHTML = `
+                    <h6><i class="fas fa-layer-group me-2"></i>Common Sheet Selection</h6>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Common Sheet Detection Unavailable:</strong> ${error.message}
+                        <br><br>
+                        <strong>Solution:</strong> Please select sheets individually for each file. This is recommended for large datasets anyway.
+                    </div>
+                `;
+            });
+        }
+
         function loadSheetNames(file, index) {
             const formData = new FormData();
             formData.append('file', file);
@@ -831,24 +1115,149 @@
             });
         }
 
+        function applyCommonSheet() {
+            const commonSheet = document.getElementById('commonSheetSelect').value;
+            if (!commonSheet) {
+                showAlert('error', 'Please select a common sheet first');
+                return;
+            }
+
+            let appliedCount = 0;
+            uploadedFiles.forEach((file, index) => {
+                if (!file.name.toLowerCase().endsWith('.csv')) {
+                    const select = document.getElementById(`sheet_${index}`);
+                    if (select) {
+                        // Check if the common sheet exists in this file's options
+                        const options = Array.from(select.options);
+                        const hasSheet = options.some(option => option.value === commonSheet);
+                        
+                        if (hasSheet) {
+                            select.value = commonSheet;
+                            appliedCount++;
+                            
+                            // Add visual feedback
+                            const fileDiv = select.closest('.parameter-group');
+                            if (fileDiv) {
+                                fileDiv.classList.add('sheet-select-highlight');
+                                setTimeout(() => {
+                                    fileDiv.classList.remove('sheet-select-highlight');
+                                }, 2000);
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (appliedCount > 0) {
+                document.getElementById('clearCommonBtn').disabled = false;
+                showAlert('success', `Applied "${commonSheet}" to ${appliedCount} Excel files successfully!`);
+                
+                // Update the common sheet select to show it's been applied
+                const commonSelect = document.getElementById('commonSheetSelect');
+                commonSelect.style.backgroundColor = '#d4edda';
+                commonSelect.style.borderColor = '#28a745';
+            } else {
+                showAlert('warning', 'No files were updated. The selected sheet may not be available in all files.');
+            }
+        }
+
+        function clearCommonSheet() {
+            // Clear all sheet selections
+            uploadedFiles.forEach((file, index) => {
+                if (!file.name.toLowerCase().endsWith('.csv')) {
+                    const select = document.getElementById(`sheet_${index}`);
+                    if (select) {
+                        select.value = '';
+                        
+                        // Remove visual feedback
+                        const fileDiv = select.closest('.parameter-group');
+                        if (fileDiv) {
+                            fileDiv.classList.remove('sheet-select-highlight');
+                        }
+                    }
+                }
+            });
+
+            // Clear common sheet selection and reset styling
+            const commonSelect = document.getElementById('commonSheetSelect');
+            commonSelect.value = '';
+            commonSelect.style.backgroundColor = '';
+            commonSelect.style.borderColor = '';
+            document.getElementById('clearCommonBtn').disabled = true;
+            
+            showAlert('info', 'Cleared all sheet selections. Please select sheets individually.');
+        }
+
+        function applyManualSheet() {
+            const manualSheetName = document.getElementById('manualSheetName').value.trim();
+            if (!manualSheetName) {
+                showAlert('error', 'Please enter a sheet name');
+                return;
+            }
+
+            let appliedCount = 0;
+            uploadedFiles.forEach((file, index) => {
+                if (!file.name.toLowerCase().endsWith('.csv')) {
+                    const select = document.getElementById(`sheet_${index}`);
+                    if (select) {
+                        // Check if the manual sheet exists in this file's options
+                        const options = Array.from(select.options);
+                        const hasSheet = options.some(option => option.value === manualSheetName);
+                        
+                        if (hasSheet) {
+                            select.value = manualSheetName;
+                            appliedCount++;
+                            
+                            // Add visual feedback
+                            const fileDiv = select.closest('.parameter-group');
+                            if (fileDiv) {
+                                fileDiv.classList.add('sheet-select-highlight');
+                                setTimeout(() => {
+                                    fileDiv.classList.remove('sheet-select-highlight');
+                                }, 2000);
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (appliedCount > 0) {
+                showAlert('success', `Applied "${manualSheetName}" to ${appliedCount} Excel files successfully!`);
+            } else {
+                showAlert('warning', `Sheet "${manualSheetName}" not found in any files. Please check the sheet name.`);
+            }
+        }
+
         function combineData() {
+            console.log('🚀 Starting data combination process...');
+            console.log(`📁 Total files to process: ${uploadedFiles.length}`);
+            
             // Validate that all Excel files have sheets selected
             let isValid = true;
             const sheetConfigs = [];
+            let excelFiles = 0;
+            let csvFiles = 0;
 
             uploadedFiles.forEach((file, index) => {
+                console.log(`📄 File ${index + 1}: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+                
                 if (!file.name.toLowerCase().endsWith('.csv')) {
+                    excelFiles++;
                     const sheetSelect = document.getElementById(`sheet_${index}`);
                     if (!sheetSelect.value) {
                         isValid = false;
+                        console.error(`❌ No sheet selected for Excel file: ${file.name}`);
                         showAlert('error', `Please select a sheet for ${file.name}`);
                         return;
                     }
+                    console.log(`✅ Excel file ${file.name} -> Sheet: ${sheetSelect.value}`);
                     sheetConfigs.push({
                         filename: file.name,
                         sheet_name: sheetSelect.value
                     });
                 } else {
+                    csvFiles++;
+                    console.log(`✅ CSV file ${file.name} -> No sheet selection needed`);
                     sheetConfigs.push({
                         filename: file.name,
                         sheet_name: null
@@ -856,46 +1265,184 @@
                 }
             });
 
-            if (!isValid) return;
+            console.log(`📊 File breakdown: ${excelFiles} Excel files, ${csvFiles} CSV files`);
+            console.log('📋 Sheet configurations:', sheetConfigs);
+
+            if (!isValid) {
+                console.error('❌ Validation failed - stopping process');
+                return;
+            }
+
+            // Choose endpoint based on file count
+            const endpoint = uploadedFiles.length > 100 ? '/combine_data_batch' : '/combine_data';
+            const batchSize = uploadedFiles.length > 200 ? 25 : 50;
+            
+            console.log(`🔗 Using endpoint: ${endpoint}`);
+            if (endpoint === '/combine_data_batch') {
+                console.log(`📦 Batch size: ${batchSize}`);
+            }
 
             showLoading('Combining data files...');
+            updateProgress(0, `Starting data combination for ${uploadedFiles.length} files...`);
+
+            // Start progress simulation for any dataset
+            let progressInterval;
+            if (uploadedFiles.length > 0) {
+                progressInterval = startProgressSimulation();
+            }
 
             const formData = new FormData();
-            uploadedFiles.forEach(file => {
+            uploadedFiles.forEach((file, index) => {
                 formData.append('files', file);
+                console.log(`📤 Adding file ${index + 1} to form data: ${file.name}`);
             });
             formData.append('config', JSON.stringify(sheetConfigs));
+            console.log('📤 Sending config:', sheetConfigs);
+            
+            if (endpoint === '/combine_data_batch') {
+                formData.append('batch_size', batchSize);
+                console.log(`📤 Adding batch_size: ${batchSize}`);
+            }
 
-            fetch('/combine_data', {
+            console.log('🌐 Sending request to server...');
+            const startTime = Date.now();
+
+            // Add timeout and better error handling
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+            
+            fetch(endpoint, {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: controller.signal
             })
-            .then(response => response.json())
+            .then(response => {
+                clearTimeout(timeoutId);
+                console.log(`📥 Response received in ${Date.now() - startTime}ms`);
+                console.log(`📥 Response status: ${response.status}`);
+                console.log(`📥 Response headers:`, response.headers);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return response.json();
+            })
             .then(data => {
+                console.log('📥 Response data:', data);
+                
+                // Clear progress simulation
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                }
+                
                 hideLoading();
                 if (data.success) {
+                    console.log('✅ Data combination successful!');
+                    console.log(`📊 Results: ${data.files_combined}/${data.total_files_attempted} files processed`);
+                    console.log(`📊 Data size: ${data.total_rows} rows × ${data.total_columns} columns`);
+                    
                     combinedData = data;
                     showResults(data);
-                    showAlert('success', 'Data combined successfully!');
+                    showAlert('success', `Data combined successfully! Processed ${data.files_combined} out of ${data.total_files_attempted} files.`);
                 } else {
+                    console.error('❌ Data combination failed:', data.error);
                     showAlert('error', data.error);
                 }
             })
             .catch(error => {
+                clearTimeout(timeoutId);
+                console.error('❌ Network error:', error);
+                console.error('❌ Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                
+                // Clear progress simulation
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                }
+                
                 hideLoading();
-                showAlert('error', 'Error combining data: ' + error.message);
+                
+                if (error.name === 'AbortError') {
+                    showAlert('error', 'Request timed out after 5 minutes. Try with fewer files or use the batch processing option.');
+                } else {
+                    showAlert('error', 'Error combining data: ' + error.message);
+                }
             });
+        }
+
+        function startProgressSimulation() {
+            let progress = 0;
+            const messages = [
+                'Reading files...',
+                'Processing data...',
+                'Combining datasets...',
+                'Aligning columns...',
+                'Converting data types...',
+                'Generating output...',
+                'Finalizing...'
+            ];
+            
+            // Adjust progress speed based on number of files
+            const fileCount = uploadedFiles.length;
+            const progressIncrement = fileCount > 100 ? 3 : fileCount > 50 ? 4 : 6;
+            const updateInterval = fileCount > 100 ? 400 : fileCount > 50 ? 300 : 200;
+            
+            return setInterval(() => {
+                progress += Math.random() * progressIncrement; // Dynamic progress increment
+                if (progress > 90) progress = 90; // Don't go to 100% until complete
+                
+                const message = messages[Math.floor(progress / 15)] || messages[messages.length - 1];
+                updateProgress(progress, message);
+            }, updateInterval);
         }
 
         function showResults(data) {
             document.getElementById('resultsCard').style.display = 'block';
             
-            // Show summary
+            // Show processing statistics for large datasets
+            if (data.total_files_attempted > 50) {
+                const statsDiv = document.getElementById('statsContent');
+                const successRate = data.total_files_attempted > 0 ? 
+                    ((data.files_combined / data.total_files_attempted) * 100).toFixed(1) : 0;
+                
+                statsDiv.innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-label">Files Processed:</span>
+                        <span class="stat-value">${data.files_combined} / ${data.total_files_attempted}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Success Rate:</span>
+                        <span class="stat-value">
+                            <span class="badge ${successRate >= 90 ? 'bg-success' : successRate >= 70 ? 'bg-warning' : 'bg-danger'}">${successRate}%</span>
+                        </span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Processing Method:</span>
+                        <span class="stat-value">${data.total_files_attempted > 100 ? 'Batch Processing' : 'Standard Processing'}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Data Size:</span>
+                        <span class="stat-value">${data.total_rows.toLocaleString()} rows × ${data.total_columns} columns</span>
+                    </div>
+                `;
+                document.getElementById('processingStats').style.display = 'block';
+            }
+            
+            // Show summary with enhanced statistics
             const summaryDiv = document.getElementById('summaryInfo');
+            const successRate = data.total_files_attempted > 0 ? 
+                ((data.files_combined / data.total_files_attempted) * 100).toFixed(1) : 0;
+            
             summaryDiv.innerHTML = `
-                <p><strong>Total Rows:</strong> ${data.total_rows}</p>
+                <p><strong>Total Rows:</strong> ${data.total_rows.toLocaleString()}</p>
                 <p><strong>Total Columns:</strong> ${data.total_columns}</p>
-                <p><strong>Files Combined:</strong> ${data.files_combined}</p>
+                <p><strong>Files Successfully Combined:</strong> ${data.files_combined} / ${data.total_files_attempted}</p>
+                <p><strong>Success Rate:</strong> <span class="badge ${successRate >= 90 ? 'bg-success' : successRate >= 70 ? 'bg-warning' : 'bg-danger'}">${successRate}%</span></p>
+                <p><strong>Processing Method:</strong> ${data.total_files_attempted > 100 ? 'Batch Processing' : 'Standard Processing'}</p>
             `;
 
             // Show preview
@@ -908,6 +1455,21 @@
                     `<tr>${headers.map(h => `<td>${row[h] || ''}</td>`).join('')}</tr>`
                 ).join('');
                 document.getElementById('previewBody').innerHTML = bodyRows;
+            }
+            
+            // Check Excel availability
+            if (!data.excel_content || data.excel_content === '') {
+                document.getElementById('excelStatus').style.display = 'block';
+                document.getElementById('excelDownloadBtn').disabled = true;
+                document.getElementById('excelDownloadBtn').classList.add('btn-secondary');
+                document.getElementById('excelDownloadBtn').classList.remove('btn-primary');
+                console.log('⚠️  Excel generation failed or timed out');
+            } else {
+                document.getElementById('excelStatus').style.display = 'none';
+                document.getElementById('excelDownloadBtn').disabled = false;
+                document.getElementById('excelDownloadBtn').classList.remove('btn-secondary');
+                document.getElementById('excelDownloadBtn').classList.add('btn-primary');
+                console.log('✅ Excel file available for download');
             }
         }
 
@@ -924,6 +1486,12 @@
                 filename = 'combined_data.csv';
                 mimeType = 'text/csv';
             } else if (fileType === 'xlsx') {
+                // Check if Excel content is available
+                if (!combinedData.excel_content || combinedData.excel_content === '') {
+                    showAlert('warning', 'Excel file generation failed or timed out. Please use CSV format instead.');
+                    return;
+                }
+                
                 // Convert hex string back to bytes
                 const hexString = combinedData.excel_content;
                 const bytes = new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
@@ -952,10 +1520,24 @@
         function showLoading(message) {
             document.getElementById('loadingText').textContent = message;
             document.getElementById('loading').style.display = 'flex';
+            updateProgress(0, message);
         }
 
         function hideLoading() {
             document.getElementById('loading').style.display = 'none';
+        }
+
+        function updateProgress(percentage, message) {
+            const progressBar = document.getElementById('progressBar');
+            const progressDetails = document.getElementById('progressDetails');
+            
+            progressBar.style.width = percentage + '%';
+            progressBar.setAttribute('aria-valuenow', percentage);
+            progressBar.textContent = Math.round(percentage) + '%';
+            
+            if (message) {
+                progressDetails.innerHTML = `<small class="text-muted">${message}</small>`;
+            }
         }
 
         function showAlert(type, message) {

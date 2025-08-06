@@ -153,15 +153,15 @@
                                 <th>Temperature Range (°C)</th>
                                 <th class="text-center">
                                     <span class="season-badge summer">Summer</span>
-                                    <br><small>Slope</small>
+                                    <br><small>+/- Slope</small>
                                 </th>
                                 <th class="text-center">
                                     <span class="season-badge fall">Fall</span>
-                                    <br><small>Slope</small>
+                                    <br><small>+/- Slope</small>
                                 </th>
                                 <th class="text-center">
                                     <span class="season-badge winter">Winter</span>
-                                    <br><small>Slope</small>
+                                    <br><small>+/- Slope</small>
                                 </th>
                                 <th class="text-center">Last Updated</th>
                                 <th class="text-center">Actions</th>
@@ -174,13 +174,16 @@
                                     <span class="temp-range">{{ "%.1f"|format(config.temp_min) }}°C - {{ "%.1f"|format(config.temp_max) }}°C</span>
                                 </td>
                                 <td class="text-center">
-                                    <span class="slope-value">{{ "%.3f"|format(config.summer_slope) }}</span>
+                                    <div><span class="slope-value text-success">+{{ "%.3f"|format(config.summer_positive_slope) }}</span></div>
+                                    <div><span class="slope-value text-danger">-{{ "%.3f"|format(config.summer_negative_slope) }}</span></div>
                                 </td>
                                 <td class="text-center">
-                                    <span class="slope-value">{{ "%.3f"|format(config.fall_slope) }}</span>
+                                    <div><span class="slope-value text-success">+{{ "%.3f"|format(config.fall_positive_slope) }}</span></div>
+                                    <div><span class="slope-value text-danger">-{{ "%.3f"|format(config.fall_negative_slope) }}</span></div>
                                 </td>
                                 <td class="text-center">
-                                    <span class="slope-value">{{ "%.3f"|format(config.winter_slope) }}</span>
+                                    <div><span class="slope-value text-success">+{{ "%.3f"|format(config.winter_positive_slope) }}</span></div>
+                                    <div><span class="slope-value text-danger">-{{ "%.3f"|format(config.winter_negative_slope) }}</span></div>
                                 </td>
                                 <td class="text-center">
                                     <small class="text-muted">
@@ -240,15 +243,15 @@
                                 <th>Humidity Range (%)</th>
                                 <th class="text-center">
                                     <span class="season-badge summer">Summer</span>
-                                    <br><small>Slope</small>
+                                    <br><small>+/- Slope</small>
                                 </th>
                                 <th class="text-center">
                                     <span class="season-badge fall">Fall</span>
-                                    <br><small>Slope</small>
+                                    <br><small>+/- Slope</small>
                                 </th>
                                 <th class="text-center">
                                     <span class="season-badge winter">Winter</span>
-                                    <br><small>Slope</small>
+                                    <br><small>+/- Slope</small>
                                 </th>
                                 <th class="text-center">Last Updated</th>
                                 <th class="text-center">Actions</th>
@@ -261,13 +264,16 @@
                                     <span class="temp-range">{{ "%.1f"|format(config.humidity_min) }}% - {{ "%.1f"|format(config.humidity_max) }}%</span>
                                 </td>
                                 <td class="text-center">
-                                    <span class="slope-value">{{ "%.3f"|format(config.summer_slope) }}</span>
+                                    <div><span class="slope-value text-success">+{{ "%.3f"|format(config.summer_positive_slope) }}</span></div>
+                                    <div><span class="slope-value text-danger">-{{ "%.3f"|format(config.summer_negative_slope) }}</span></div>
                                 </td>
                                 <td class="text-center">
-                                    <span class="slope-value">{{ "%.3f"|format(config.fall_slope) }}</span>
+                                    <div><span class="slope-value text-success">+{{ "%.3f"|format(config.fall_positive_slope) }}</span></div>
+                                    <div><span class="slope-value text-danger">-{{ "%.3f"|format(config.fall_negative_slope) }}</span></div>
                                 </td>
                                 <td class="text-center">
-                                    <span class="slope-value">{{ "%.3f"|format(config.winter_slope) }}</span>
+                                    <div><span class="slope-value text-success">+{{ "%.3f"|format(config.winter_positive_slope) }}</span></div>
+                                    <div><span class="slope-value text-danger">-{{ "%.3f"|format(config.winter_negative_slope) }}</span></div>
                                 </td>
                                 <td class="text-center">
                                     <small class="text-muted">

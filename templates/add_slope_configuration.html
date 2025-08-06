@@ -150,19 +150,34 @@
                     <div class="season-section">
                         <div class="season-title">
                             <span class="season-badge summer">Summer</span>
-                            <span>Summer Season Slope</span>
+                            <span>Summer Season Slopes</span>
                         </div>
                         <div class="row">
-                            <div class="col-md-12">
-                                <label for="summer_slope" class="form-label">Summer Slope Value</label>
+                            <div class="col-md-6">
+                                <label for="summer_positive_slope" class="form-label">
+                                    <i class="fas fa-arrow-up text-success"></i> Positive Slope
+                                </label>
                                 <input type="number" 
                                        class="form-control" 
-                                       id="summer_slope" 
-                                       name="summer_slope" 
+                                       id="summer_positive_slope" 
+                                       name="summer_positive_slope" 
                                        step="0.001" 
                                        required 
                                        placeholder="e.g., 0.125">
-                                <div class="help-text">Enter the slope value for summer season calculations</div>
+                                <div class="help-text">Slope when target > start value</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="summer_negative_slope" class="form-label">
+                                    <i class="fas fa-arrow-down text-danger"></i> Negative Slope
+                                </label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="summer_negative_slope" 
+                                       name="summer_negative_slope" 
+                                       step="0.001" 
+                                       required 
+                                       placeholder="e.g., 0.100">
+                                <div class="help-text">Slope when target < start value</div>
                             </div>
                         </div>
                     </div>
@@ -171,19 +186,34 @@
                     <div class="season-section">
                         <div class="season-title">
                             <span class="season-badge fall">Fall</span>
-                            <span>Fall Season Slope</span>
+                            <span>Fall Season Slopes</span>
                         </div>
                         <div class="row">
-                            <div class="col-md-12">
-                                <label for="fall_slope" class="form-label">Fall Slope Value</label>
+                            <div class="col-md-6">
+                                <label for="fall_positive_slope" class="form-label">
+                                    <i class="fas fa-arrow-up text-success"></i> Positive Slope
+                                </label>
                                 <input type="number" 
                                        class="form-control" 
-                                       id="fall_slope" 
-                                       name="fall_slope" 
+                                       id="fall_positive_slope" 
+                                       name="fall_positive_slope" 
                                        step="0.001" 
                                        required 
                                        placeholder="e.g., 0.150">
-                                <div class="help-text">Enter the slope value for fall season calculations</div>
+                                <div class="help-text">Slope when target > start value</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fall_negative_slope" class="form-label">
+                                    <i class="fas fa-arrow-down text-danger"></i> Negative Slope
+                                </label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="fall_negative_slope" 
+                                       name="fall_negative_slope" 
+                                       step="0.001" 
+                                       required 
+                                       placeholder="e.g., 0.120">
+                                <div class="help-text">Slope when target < start value</div>
                             </div>
                         </div>
                     </div>
@@ -192,19 +222,34 @@
                     <div class="season-section">
                         <div class="season-title">
                             <span class="season-badge winter">Winter</span>
-                            <span>Winter Season Slope</span>
+                            <span>Winter Season Slopes</span>
                         </div>
                         <div class="row">
-                            <div class="col-md-12">
-                                <label for="winter_slope" class="form-label">Winter Slope Value</label>
+                            <div class="col-md-6">
+                                <label for="winter_positive_slope" class="form-label">
+                                    <i class="fas fa-arrow-up text-success"></i> Positive Slope
+                                </label>
                                 <input type="number" 
                                        class="form-control" 
-                                       id="winter_slope" 
-                                       name="winter_slope" 
+                                       id="winter_positive_slope" 
+                                       name="winter_positive_slope" 
                                        step="0.001" 
                                        required 
                                        placeholder="e.g., 0.175">
-                                <div class="help-text">Enter the slope value for winter season calculations</div>
+                                <div class="help-text">Slope when target > start value</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="winter_negative_slope" class="form-label">
+                                    <i class="fas fa-arrow-down text-danger"></i> Negative Slope
+                                </label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="winter_negative_slope" 
+                                       name="winter_negative_slope" 
+                                       step="0.001" 
+                                       required 
+                                       placeholder="e.g., 0.140">
+                                <div class="help-text">Slope when target < start value</div>
                             </div>
                         </div>
                     </div>

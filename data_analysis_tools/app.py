@@ -19,6 +19,9 @@ import shutil
 app = Flask(__name__)
 app.secret_key = 'excel_visualizer_secret_key_2024'
 
+# Increase request size limit for large file uploads (2GB)
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
+
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
@@ -1416,23 +1419,21 @@ def get_file_sheets():
     
     return jsonify({'error': 'Invalid file type'})
 
-@app.route('/combine_data', methods=['POST'])
-def combine_data():
+@app.route('/get_common_sheets', methods=['POST'])
+def get_common_sheets():
+    """Get common sheet names across all uploaded files"""
     if 'files' not in request.files:
         return jsonify({'error': 'No files uploaded'})
     
     files = request.files.getlist('files')
-    config = json.loads(request.form.get('config', '[]'))
-    
     if not files:
         return jsonify({'error': 'No files selected'})
     
     try:
-        dfs = []
-        all_columns = set()
+        all_sheets = {}  # Dictionary to store sheets for each file
+        common_sheets = None
         
-        # Process each file
-        for i, file in enumerate(files):
+        for file in files:
             if file.filename == '':
                 continue
                 
@@ -1443,57 +1444,387 @@ def combine_data():
                 file.save(filepath)
                 
                 try:
-                    # Get sheet configuration for this file
-                    file_config = next((c for c in config if c['filename'] == file.filename), {})
-                    sheet_name = file_config.get('sheet_name', 0)
-                    
-                    # Read file
+                    # Get sheet names for this file
                     if filename.endswith('.csv'):
-                        df = pd.read_csv(filepath)
+                        all_sheets[file.filename] = ['CSV File - No Sheets']
                     else:
-                        df = pd.read_excel(filepath, sheet_name=sheet_name)
-                    
-                    # Ensure Elapsed Time is numeric for consistency
-                    if 'Elapsed Time' in df.columns:
-                        df['Elapsed Time'] = pd.to_numeric(df['Elapsed Time'], errors='coerce')
-                    
-                    dfs.append(df)
-                    all_columns.update(df.columns)
-                    
+                        excel_file = pd.ExcelFile(filepath)
+                        sheets = excel_file.sheet_names
+                        all_sheets[file.filename] = sheets
+                        
+                        # Find common sheets
+                        if common_sheets is None:
+                            common_sheets = set(sheets)
+                        else:
+                            common_sheets = common_sheets.intersection(set(sheets))
+                            
                 except Exception as e:
                     print(f"Error reading {filename}: {e}")
-                    continue
+                    all_sheets[file.filename] = []
                 finally:
                     # Clean up temporary file
                     if os.path.exists(filepath):
                         os.remove(filepath)
         
+        # Convert common_sheets to list and sort
+        common_sheets_list = sorted(list(common_sheets)) if common_sheets else []
+        
+        return jsonify({
+            'success': True,
+            'common_sheets': common_sheets_list,
+            'all_sheets': all_sheets,
+            'total_files': len(files),
+            'files_with_sheets': len([s for s in all_sheets.values() if s and s != ['CSV File - No Sheets']])
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in get_common_sheets: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Error getting common sheets: {str(e)}'})
+
+@app.route('/combine_data', methods=['POST'])
+def combine_data():
+    print("🚀 Starting combine_data endpoint...")
+    
+    if 'files' not in request.files:
+        print("❌ No files in request")
+        return jsonify({'error': 'No files uploaded'})
+    
+    files = request.files.getlist('files')
+    config = json.loads(request.form.get('config', '[]'))
+    
+    print(f"📁 Received {len(files)} files")
+    print(f"📋 Config: {config}")
+    
+    if not files:
+        print("❌ No files selected")
+        return jsonify({'error': 'No files selected'})
+    
+    try:
+        dfs = []
+        all_columns = set()
+        processed_files = 0
+        total_files = len(files)
+        
+        print(f"🔄 Processing {total_files} files...")
+        
+        # Process each file with progress tracking
+        for i, file in enumerate(files):
+            if file.filename == '':
+                print(f"⚠️  Skipping empty filename at index {i}")
+                continue
+                
+            if file and allowed_file(file.filename):
+                print(f"📄 Processing file {i+1}/{total_files}: {file.filename}")
+                
+                # Save file temporarily
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+                print(f"💾 Saved temporary file: {filepath}")
+                
+                try:
+                    # Get sheet configuration for this file
+                    file_config = next((c for c in config if c['filename'] == file.filename), {})
+                    sheet_name = file_config.get('sheet_name', 0)
+                    print(f"📋 Sheet config for {filename}: {sheet_name}")
+                    
+                    # Read file with optimized settings for large files
+                    if filename.endswith('.csv'):
+                        print(f"📖 Reading CSV file: {filename}")
+                        # Use chunking for large CSV files
+                        df = pd.read_csv(filepath, low_memory=False)
+                    else:
+                        print(f"📖 Reading Excel file: {filename} with sheet: {sheet_name}")
+                        # Use optimized settings for Excel files
+                        df = pd.read_excel(filepath, sheet_name=sheet_name, engine='openpyxl')
+                    
+                    print(f"✅ Successfully read {filename}: {len(df)} rows, {len(df.columns)} columns")
+                    
+                    # Ensure Elapsed Time is numeric for consistency
+                    if 'Elapsed Time' in df.columns:
+                        df['Elapsed Time'] = pd.to_numeric(df['Elapsed Time'], errors='coerce')
+                        print(f"🔢 Converted Elapsed Time column to numeric")
+                    
+                    dfs.append(df)
+                    all_columns.update(df.columns)
+                    processed_files += 1
+                    print(f"✅ File {i+1} processed successfully")
+                    
+                except Exception as e:
+                    print(f"❌ Error reading {filename}: {e}")
+                    import traceback
+                    print(f"📋 Traceback: {traceback.format_exc()}")
+                    continue
+                finally:
+                    # Clean up temporary file
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                        print(f"🗑️  Cleaned up temporary file: {filepath}")
+        
         if not dfs:
+            print("❌ No valid DataFrames to process")
             return jsonify({'error': 'No valid files could be processed'})
+        
+        print(f"📊 Processing {len(dfs)} DataFrames...")
         
         # Use the column order from the first file as the reference
         reference_columns = dfs[0].columns.tolist()
         additional_columns = [col for col in all_columns if col not in reference_columns]
         final_columns = reference_columns + additional_columns
         
-        # Align each DataFrame to have all columns
+        print(f"📋 Reference columns: {reference_columns}")
+        print(f"📋 Additional columns: {additional_columns}")
+        print(f"📋 Final columns: {final_columns}")
+        
+        # Align each DataFrame to have all columns (optimized for large datasets)
         aligned_dfs = []
-        for df in dfs:
-            aligned_df = pd.DataFrame(columns=final_columns)
-            for col in df.columns:
-                aligned_df[col] = df[col]
-            for col in final_columns:
-                if col not in df.columns:
-                    aligned_df[col] = ""
+        for i, df in enumerate(dfs):
+            print(f"🔧 Aligning DataFrame {i+1}: {len(df)} rows, {len(df.columns)} columns")
+            # Create aligned DataFrame more efficiently
+            aligned_df = df.reindex(columns=final_columns, fill_value="")
+            aligned_dfs.append(aligned_df)
+            print(f"✅ DataFrame {i+1} aligned: {len(aligned_df)} rows, {len(aligned_df.columns)} columns")
+        
+        # Combine all DataFrames with memory optimization
+        # Filter out empty DataFrames to avoid FutureWarning
+        non_empty_dfs = [df for df in aligned_dfs if not df.empty]
+        print(f"📦 Combining {len(non_empty_dfs)} non-empty DataFrames...")
+        
+        if non_empty_dfs:
+            combined_df = pd.concat(non_empty_dfs, ignore_index=True, copy=False)
+            print(f"✅ Combined DataFrame created: {len(combined_df)} rows, {len(combined_df.columns)} columns")
+        else:
+            # Create empty DataFrame with correct columns if all are empty
+            combined_df = pd.DataFrame(columns=final_columns)
+            print(f"⚠️  Created empty DataFrame with {len(final_columns)} columns")
+        
+        # Convert numeric columns more efficiently
+        numeric_columns = [col for col in final_columns if col not in ["Time"]]
+        print(f"🔢 Converting {len(numeric_columns)} numeric columns...")
+        
+        for col in numeric_columns:
+            if col in combined_df.columns:
+                combined_df[col] = pd.to_numeric(combined_df[col], errors="coerce").fillna("")
+                print(f"✅ Converted column: {col}")
+        
+        if "Time" in combined_df.columns:
+            combined_df["Time"] = combined_df["Time"].astype(str)
+            print(f"✅ Converted Time column to string")
+        
+        print(f"📄 Generating output files...")
+        
+        # Generate CSV content
+        csv_content = combined_df.to_csv(index=False)
+        print(f"✅ CSV content generated: {len(csv_content)} characters")
+        
+        # Generate Excel content with timeout protection
+        import io
+        import signal
+        import threading
+        import time
+        
+        excel_content = b''  # Default to empty
+        excel_generation_success = False
+        
+        def generate_excel():
+            nonlocal excel_content, excel_generation_success
+            try:
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    combined_df.to_excel(writer, sheet_name='Combined Data', index=False)
+                excel_content = excel_buffer.getvalue()
+                excel_generation_success = True
+                print(f"✅ Excel content generated: {len(excel_content)} bytes")
+            except Exception as e:
+                print(f"❌ Excel generation failed: {e}")
+                excel_generation_success = False
+        
+        # Start Excel generation in a separate thread with timeout
+        excel_thread = threading.Thread(target=generate_excel)
+        excel_thread.start()
+        
+        # Wait for Excel generation with timeout (30 seconds)
+        excel_thread.join(timeout=30)
+        
+        if excel_thread.is_alive():
+            print("⚠️  Excel generation taking too long, proceeding with CSV only")
+            excel_generation_success = False
+        elif not excel_generation_success:
+            print("⚠️  Excel generation failed, proceeding with CSV only")
+        
+        if excel_generation_success:
+            print(f"✅ Excel file ready: {len(excel_content)} bytes")
+        else:
+            print("⚠️  Using CSV format only due to Excel generation issues")
+            excel_content = b''  # Empty bytes
+        
+        # Prepare preview data
+        preview_data = combined_df.head(10).to_dict('records')
+        print(f"✅ Preview data prepared: {len(preview_data)} rows")
+        
+        result = {
+            'success': True,
+            'total_rows': len(combined_df),
+            'total_columns': len(combined_df.columns),
+            'files_combined': processed_files,
+            'total_files_processed': processed_files,
+            'total_files_attempted': total_files,
+            'preview': preview_data,
+            'csv_content': csv_content,
+            'excel_content': excel_content.hex()  # Convert bytes to hex string for JSON
+        }
+        
+        print(f"🎉 Success! Returning result: {processed_files}/{total_files} files processed")
+        print(f"📊 Final data size: {len(combined_df)} rows × {len(combined_df.columns)} columns")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in combine_data: {str(e)}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Error combining data: {str(e)}'})
+
+@app.route('/combine_data_batch', methods=['POST'])
+def combine_data_batch():
+    """Handle large batches of files with progress tracking"""
+    print("🚀 Starting combine_data_batch endpoint...")
+    print(f"📊 Request content length: {request.content_length}")
+    print(f"📊 Request files: {len(request.files)}")
+    
+    if 'files' not in request.files:
+        print("❌ No files in request")
+        return jsonify({'error': 'No files uploaded'})
+    
+    files = request.files.getlist('files')
+    config = json.loads(request.form.get('config', '[]'))
+    batch_size = int(request.form.get('batch_size', 50))  # Process files in batches
+    
+    print(f"📁 Received {len(files)} files")
+    print(f"📋 Config length: {len(config)}")
+    print(f"📦 Batch size: {batch_size}")
+    
+    if not files:
+        print("❌ No files selected")
+        return jsonify({'error': 'No files selected'})
+    
+    try:
+        all_columns = set()
+        processed_files = 0
+        total_files = len(files)
+        combined_dfs = []
+        
+        # Process files in batches to manage memory
+        for batch_start in range(0, total_files, batch_size):
+            batch_end = min(batch_start + batch_size, total_files)
+            batch_files = files[batch_start:batch_end]
+            
+            batch_dfs = []
+            
+            # Process each file in the current batch
+            for i, file in enumerate(batch_files):
+                if file.filename == '':
+                    continue
+                    
+                if file and allowed_file(file.filename):
+                    # Save file temporarily
+                    filename = secure_filename(file.filename)
+                    filepath = os.path.join(UPLOAD_FOLDER, filename)
+                    file.save(filepath)
+                    
+                    try:
+                        # Get sheet configuration for this file
+                        file_config = next((c for c in config if c['filename'] == file.filename), {})
+                        sheet_name = file_config.get('sheet_name', 0)
+                        
+                        # Read file with optimized settings for large files
+                        if filename.endswith('.csv'):
+                            # Use chunking for very large CSV files
+                            try:
+                                # First try to read normally
+                                df = pd.read_csv(filepath, low_memory=False)
+                            except MemoryError:
+                                # If memory error, try reading in chunks
+                                chunk_list = []
+                                chunk_size = 5000  # Smaller chunks for very large files
+                                for chunk in pd.read_csv(filepath, chunksize=chunk_size, low_memory=False):
+                                    chunk_list.append(chunk)
+                                    # Clear memory after each chunk if list gets too large
+                                    if len(chunk_list) > 10:
+                                        temp_df = pd.concat(chunk_list, ignore_index=True, copy=False)
+                                        chunk_list = [temp_df]
+                                df = pd.concat(chunk_list, ignore_index=True, copy=False)
+                        else:
+                            # For Excel files, try to read with memory optimization
+                            try:
+                                df = pd.read_excel(filepath, sheet_name=sheet_name, engine='openpyxl')
+                            except MemoryError:
+                                # If Excel file is too large, try reading in chunks (if possible)
+                                print(f"Warning: Large Excel file {filename} may cause memory issues")
+                                df = pd.read_excel(filepath, sheet_name=sheet_name, engine='openpyxl')
+                        
+                        # Ensure Elapsed Time is numeric for consistency
+                        if 'Elapsed Time' in df.columns:
+                            df['Elapsed Time'] = pd.to_numeric(df['Elapsed Time'], errors='coerce')
+                        
+                        batch_dfs.append(df)
+                        all_columns.update(df.columns)
+                        processed_files += 1
+                        
+                    except Exception as e:
+                        print(f"Error reading {filename}: {e}")
+                        continue
+                    finally:
+                        # Clean up temporary file
+                        if os.path.exists(filepath):
+                            os.remove(filepath)
+            
+            # Combine batch DataFrames and clear memory
+            if batch_dfs:
+                # Combine batch DataFrames
+                batch_combined = pd.concat(batch_dfs, ignore_index=True, copy=False)
+                combined_dfs.append(batch_combined)
+                
+                # Clear batch memory
+                del batch_dfs
+                import gc
+                gc.collect()
+        
+        if not combined_dfs:
+            return jsonify({'error': 'No valid files could be processed'})
+        
+        # Use the column order from the first file as the reference
+        reference_columns = combined_dfs[0].columns.tolist()
+        additional_columns = [col for col in all_columns if col not in reference_columns]
+        final_columns = reference_columns + additional_columns
+        
+        # Align each DataFrame to have all columns (optimized for large datasets)
+        aligned_dfs = []
+        for df in combined_dfs:
+            # Create aligned DataFrame more efficiently
+            aligned_df = df.reindex(columns=final_columns, fill_value="")
             aligned_dfs.append(aligned_df)
         
-        # Combine all DataFrames
-        combined_df = pd.concat(aligned_dfs, ignore_index=True)
+        # Combine all DataFrames with memory optimization
+        # Filter out empty DataFrames to avoid FutureWarning
+        non_empty_dfs = [df for df in aligned_dfs if not df.empty]
+        if non_empty_dfs:
+            combined_df = pd.concat(non_empty_dfs, ignore_index=True, copy=False)
+        else:
+            # Create empty DataFrame with correct columns if all are empty
+            combined_df = pd.DataFrame(columns=final_columns)
         
-        # Convert numeric columns
+        # Clear intermediate DataFrames to free memory
+        del aligned_dfs, combined_dfs
+        gc.collect()
+        
+        # Convert numeric columns more efficiently
         numeric_columns = [col for col in final_columns if col not in ["Time"]]
         for col in numeric_columns:
-            combined_df[col] = pd.to_numeric(combined_df[col], errors="coerce").fillna("")
+            if col in combined_df.columns:
+                combined_df[col] = pd.to_numeric(combined_df[col], errors="coerce").fillna("")
         
         if "Time" in combined_df.columns:
             combined_df["Time"] = combined_df["Time"].astype(str)
@@ -1501,21 +1832,28 @@ def combine_data():
         # Generate CSV content
         csv_content = combined_df.to_csv(index=False)
         
-        # Generate Excel content
+        # Generate Excel content with memory optimization
         import io
         excel_buffer = io.BytesIO()
         with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
             combined_df.to_excel(writer, sheet_name='Combined Data', index=False)
         excel_content = excel_buffer.getvalue()
         
-        # Prepare preview data
+        # Prepare preview data and get row count before clearing
         preview_data = combined_df.head(10).to_dict('records')
+        total_rows = len(combined_df)
+        
+        # Clear final DataFrame to free memory
+        del combined_df
+        gc.collect()
         
         return jsonify({
             'success': True,
-            'total_rows': len(combined_df),
-            'total_columns': len(combined_df.columns),
-            'files_combined': len(files),
+            'total_rows': total_rows,
+            'total_columns': len(final_columns),
+            'files_combined': processed_files,
+            'total_files_processed': processed_files,
+            'total_files_attempted': total_files,
             'preview': preview_data,
             'csv_content': csv_content,
             'excel_content': excel_content.hex()  # Convert bytes to hex string for JSON
@@ -1523,7 +1861,7 @@ def combine_data():
         
     except Exception as e:
         import traceback
-        print(f"Error in combine_data: {str(e)}")
+        print(f"Error in combine_data_batch: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Error combining data: {str(e)}'})
 
@@ -1700,6 +2038,12 @@ def download_simple_graph_html():
         print(f"Error in download_simple_graph_html: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Error generating standalone HTML: {str(e)}'})
+
+@app.route('/test_connection', methods=['GET'])
+def test_connection():
+    """Simple endpoint to test if server is responding"""
+    print("🔍 Test connection endpoint called")
+    return jsonify({'status': 'ok', 'message': 'Server is responding', 'timestamp': datetime.now().isoformat()})
 
 @app.route('/static/<path:filename>')
 def static_files(filename):

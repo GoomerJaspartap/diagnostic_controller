@@ -151,9 +151,12 @@ def init_db():
             id SERIAL PRIMARY KEY,
             temp_min REAL NOT NULL,
             temp_max REAL NOT NULL,
-            summer_slope REAL NOT NULL,
-            fall_slope REAL NOT NULL,
-            winter_slope REAL NOT NULL,
+            summer_positive_slope REAL NOT NULL,
+            summer_negative_slope REAL NOT NULL,
+            fall_positive_slope REAL NOT NULL,
+            fall_negative_slope REAL NOT NULL,
+            winter_positive_slope REAL NOT NULL,
+            winter_negative_slope REAL NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -164,9 +167,12 @@ def init_db():
             id SERIAL PRIMARY KEY,
             humidity_min REAL NOT NULL,
             humidity_max REAL NOT NULL,
-            summer_slope REAL NOT NULL,
-            fall_slope REAL NOT NULL,
-            winter_slope REAL NOT NULL,
+            summer_positive_slope REAL NOT NULL,
+            summer_negative_slope REAL NOT NULL,
+            fall_positive_slope REAL NOT NULL,
+            fall_negative_slope REAL NOT NULL,
+            winter_positive_slope REAL NOT NULL,
+            winter_negative_slope REAL NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -303,7 +309,8 @@ def calculate_average_slope(start_value, target_value, temperature, humidity, co
             # Get temperature slope configurations that overlap with the START and TARGET value range
             # We need to find all ranges that contain any part of the start_value to target_value range
             c.execute('''
-                SELECT temp_min, temp_max, summer_slope, fall_slope, winter_slope 
+                SELECT temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+                       fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
                 FROM slope_configurations 
                 WHERE (temp_min <= %s AND temp_max >= %s) OR  -- Start value falls in range
                       (temp_min <= %s AND temp_max >= %s) OR  -- Target value falls in range
@@ -314,7 +321,8 @@ def calculate_average_slope(start_value, target_value, temperature, humidity, co
         else:  # Humidity
             # Get humidity slope configurations that overlap with the START and TARGET value range
             c.execute('''
-                SELECT humidity_min, humidity_max, summer_slope, fall_slope, winter_slope 
+                SELECT humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+                       fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
                 FROM humidity_slope_configurations 
                 WHERE (humidity_min <= %s AND humidity_max >= %s) OR  -- Start value falls in range
                       (humidity_min <= %s AND humidity_max >= %s) OR  -- Target value falls in range
@@ -334,17 +342,20 @@ def calculate_average_slope(start_value, target_value, temperature, humidity, co
         config_count = 0
         used_configs = []
         
+        # Determine if we're going positive (target > start) or negative (target < start)
+        is_positive_direction = target_value > start_value
+        
         for config in configs:
-            # Get the appropriate slope for the current season
+            # Get the appropriate slope for the current season and direction
             if season == 'Summer':
-                slope_per_min = config[2]  # summer_slope
+                slope_per_min = config[2] if is_positive_direction else config[3]  # summer_positive_slope or summer_negative_slope
             elif season == 'Fall':
-                slope_per_min = config[3]  # fall_slope
+                slope_per_min = config[4] if is_positive_direction else config[5]  # fall_positive_slope or fall_negative_slope
             elif season == 'Winter':
-                slope_per_min = config[4]  # winter_slope
+                slope_per_min = config[6] if is_positive_direction else config[7]  # winter_positive_slope or winter_negative_slope
             else:
                 # Default to summer slope if season is unknown
-                slope_per_min = config[2]
+                slope_per_min = config[2] if is_positive_direction else config[3]
             
             total_slope += slope_per_min
             config_count += 1
@@ -1786,7 +1797,9 @@ def configurations():
     
     # Fetch temperature configurations
     c.execute('''
-        SELECT id, temp_min, temp_max, summer_slope, fall_slope, winter_slope, created_at, updated_at
+        SELECT id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+               fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, 
+               created_at, updated_at
         FROM slope_configurations
         ORDER BY temp_min ASC
     ''')
@@ -1796,16 +1809,21 @@ def configurations():
             'id': row[0],
             'temp_min': row[1],
             'temp_max': row[2],
-            'summer_slope': row[3],
-            'fall_slope': row[4],
-            'winter_slope': row[5],
-            'created_at': row[6],
-            'updated_at': row[7]
+            'summer_positive_slope': row[3],
+            'summer_negative_slope': row[4],
+            'fall_positive_slope': row[5],
+            'fall_negative_slope': row[6],
+            'winter_positive_slope': row[7],
+            'winter_negative_slope': row[8],
+            'created_at': row[9],
+            'updated_at': row[10]
         })
     
     # Fetch humidity configurations
     c.execute('''
-        SELECT id, humidity_min, humidity_max, summer_slope, fall_slope, winter_slope, created_at, updated_at
+        SELECT id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+               fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, 
+               created_at, updated_at
         FROM humidity_slope_configurations
         ORDER BY humidity_min ASC
     ''')
@@ -1815,11 +1833,14 @@ def configurations():
             'id': row[0],
             'humidity_min': row[1],
             'humidity_max': row[2],
-            'summer_slope': row[3],
-            'fall_slope': row[4],
-            'winter_slope': row[5],
-            'created_at': row[6],
-            'updated_at': row[7]
+            'summer_positive_slope': row[3],
+            'summer_negative_slope': row[4],
+            'fall_positive_slope': row[5],
+            'fall_negative_slope': row[6],
+            'winter_positive_slope': row[7],
+            'winter_negative_slope': row[8],
+            'created_at': row[9],
+            'updated_at': row[10]
         })
     
     # Fetch season temperature ranges
@@ -1858,9 +1879,12 @@ def add_slope_configuration():
         try:
             temp_min = float(request.form['temp_min'])
             temp_max = float(request.form['temp_max'])
-            summer_slope = float(request.form['summer_slope'])
-            fall_slope = float(request.form['fall_slope'])
-            winter_slope = float(request.form['winter_slope'])
+            summer_positive_slope = float(request.form['summer_positive_slope'])
+            summer_negative_slope = float(request.form['summer_negative_slope'])
+            fall_positive_slope = float(request.form['fall_positive_slope'])
+            fall_negative_slope = float(request.form['fall_negative_slope'])
+            winter_positive_slope = float(request.form['winter_positive_slope'])
+            winter_negative_slope = float(request.form['winter_negative_slope'])
             
             if temp_min >= temp_max:
                 flash('Minimum temperature must be less than maximum temperature', 'error')
@@ -1883,9 +1907,10 @@ def add_slope_configuration():
                 return redirect(url_for('configurations'))
             
             c.execute('''
-                INSERT INTO slope_configurations (temp_min, temp_max, summer_slope, fall_slope, winter_slope)
-                VALUES (%s, %s, %s, %s, %s)
-            ''', (temp_min, temp_max, summer_slope, fall_slope, winter_slope))
+                INSERT INTO slope_configurations (temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+                                                fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope))
             
             conn.commit()
             conn.close()
@@ -1908,9 +1933,12 @@ def add_humidity_slope_configuration():
         try:
             humidity_min = float(request.form['humidity_min'])
             humidity_max = float(request.form['humidity_max'])
-            summer_slope = float(request.form['summer_slope'])
-            fall_slope = float(request.form['fall_slope'])
-            winter_slope = float(request.form['winter_slope'])
+            summer_positive_slope = float(request.form['summer_positive_slope'])
+            summer_negative_slope = float(request.form['summer_negative_slope'])
+            fall_positive_slope = float(request.form['fall_positive_slope'])
+            fall_negative_slope = float(request.form['fall_negative_slope'])
+            winter_positive_slope = float(request.form['winter_positive_slope'])
+            winter_negative_slope = float(request.form['winter_negative_slope'])
             
             if humidity_min >= humidity_max:
                 flash('Minimum humidity must be less than maximum humidity', 'error')
@@ -1933,9 +1961,10 @@ def add_humidity_slope_configuration():
                 return redirect(url_for('configurations'))
             
             c.execute('''
-                INSERT INTO humidity_slope_configurations (humidity_min, humidity_max, summer_slope, fall_slope, winter_slope)
-                VALUES (%s, %s, %s, %s, %s)
-            ''', (humidity_min, humidity_max, summer_slope, fall_slope, winter_slope))
+                INSERT INTO humidity_slope_configurations (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+                                                         fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope))
             
             conn.commit()
             conn.close()
@@ -1961,9 +1990,12 @@ def edit_slope_configuration(config_id):
         try:
             temp_min = float(request.form['temp_min'])
             temp_max = float(request.form['temp_max'])
-            summer_slope = float(request.form['summer_slope'])
-            fall_slope = float(request.form['fall_slope'])
-            winter_slope = float(request.form['winter_slope'])
+            summer_positive_slope = float(request.form['summer_positive_slope'])
+            summer_negative_slope = float(request.form['summer_negative_slope'])
+            fall_positive_slope = float(request.form['fall_positive_slope'])
+            fall_negative_slope = float(request.form['fall_negative_slope'])
+            winter_positive_slope = float(request.form['winter_positive_slope'])
+            winter_negative_slope = float(request.form['winter_negative_slope'])
             
             if temp_min >= temp_max:
                 flash('Minimum temperature must be less than maximum temperature', 'error')
@@ -1986,9 +2018,11 @@ def edit_slope_configuration(config_id):
             
             c.execute('''
                 UPDATE slope_configurations 
-                SET temp_min = %s, temp_max = %s, summer_slope = %s, fall_slope = %s, winter_slope = %s, updated_at = CURRENT_TIMESTAMP
+                SET temp_min = %s, temp_max = %s, summer_positive_slope = %s, summer_negative_slope = %s, 
+                    fall_positive_slope = %s, fall_negative_slope = %s, winter_positive_slope = %s, winter_negative_slope = %s, 
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-            ''', (temp_min, temp_max, summer_slope, fall_slope, winter_slope, config_id))
+            ''', (temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, config_id))
             
             conn.commit()
             conn.close()
@@ -2003,7 +2037,7 @@ def edit_slope_configuration(config_id):
             return redirect(url_for('configurations'))
     
     # GET request - fetch current configuration
-    c.execute('SELECT id, temp_min, temp_max, summer_slope, fall_slope, winter_slope FROM slope_configurations WHERE id = %s', (config_id,))
+    c.execute('SELECT id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope FROM slope_configurations WHERE id = %s', (config_id,))
     config = c.fetchone()
     conn.close()
     
@@ -2015,9 +2049,12 @@ def edit_slope_configuration(config_id):
         'id': config[0],
         'temp_min': config[1],
         'temp_max': config[2],
-        'summer_slope': config[3],
-        'fall_slope': config[4],
-        'winter_slope': config[5]
+        'summer_positive_slope': config[3],
+        'summer_negative_slope': config[4],
+        'fall_positive_slope': config[5],
+        'fall_negative_slope': config[6],
+        'winter_positive_slope': config[7],
+        'winter_negative_slope': config[8]
     })
 
 @app.route('/edit_humidity_slope_configuration/<int:config_id>', methods=['GET', 'POST'])
@@ -2030,9 +2067,12 @@ def edit_humidity_slope_configuration(config_id):
         try:
             humidity_min = float(request.form['humidity_min'])
             humidity_max = float(request.form['humidity_max'])
-            summer_slope = float(request.form['summer_slope'])
-            fall_slope = float(request.form['fall_slope'])
-            winter_slope = float(request.form['winter_slope'])
+            summer_positive_slope = float(request.form['summer_positive_slope'])
+            summer_negative_slope = float(request.form['summer_negative_slope'])
+            fall_positive_slope = float(request.form['fall_positive_slope'])
+            fall_negative_slope = float(request.form['fall_negative_slope'])
+            winter_positive_slope = float(request.form['winter_positive_slope'])
+            winter_negative_slope = float(request.form['winter_negative_slope'])
             
             if humidity_min >= humidity_max:
                 flash('Minimum humidity must be less than maximum humidity', 'error')
@@ -2055,9 +2095,11 @@ def edit_humidity_slope_configuration(config_id):
             
             c.execute('''
                 UPDATE humidity_slope_configurations 
-                SET humidity_min = %s, humidity_max = %s, summer_slope = %s, fall_slope = %s, winter_slope = %s, updated_at = CURRENT_TIMESTAMP
+                SET humidity_min = %s, humidity_max = %s, summer_positive_slope = %s, summer_negative_slope = %s, 
+                    fall_positive_slope = %s, fall_negative_slope = %s, winter_positive_slope = %s, winter_negative_slope = %s, 
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-            ''', (humidity_min, humidity_max, summer_slope, fall_slope, winter_slope, config_id))
+            ''', (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, config_id))
             
             conn.commit()
             conn.close()
@@ -2072,7 +2114,7 @@ def edit_humidity_slope_configuration(config_id):
             return redirect(url_for('configurations'))
     
     # GET request - fetch current configuration
-    c.execute('SELECT id, humidity_min, humidity_max, summer_slope, fall_slope, winter_slope FROM humidity_slope_configurations WHERE id = %s', (config_id,))
+    c.execute('SELECT id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope FROM humidity_slope_configurations WHERE id = %s', (config_id,))
     config = c.fetchone()
     conn.close()
     
@@ -2084,9 +2126,12 @@ def edit_humidity_slope_configuration(config_id):
         'id': config[0],
         'humidity_min': config[1],
         'humidity_max': config[2],
-        'summer_slope': config[3],
-        'fall_slope': config[4],
-        'winter_slope': config[5]
+        'summer_positive_slope': config[3],
+        'summer_negative_slope': config[4],
+        'fall_positive_slope': config[5],
+        'fall_negative_slope': config[6],
+        'winter_positive_slope': config[7],
+        'winter_negative_slope': config[8]
     })
 
 @app.route('/delete_slope_configuration/<int:config_id>', methods=['POST'])
