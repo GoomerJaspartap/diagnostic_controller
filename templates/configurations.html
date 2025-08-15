@@ -150,6 +150,7 @@
                     <table class="table table-hover mb-0">
                         <thead>
                             <tr>
+                                <th>Room</th>
                                 <th>Temperature Range (°C)</th>
                                 <th class="text-center">
                                     <span class="season-badge summer">Summer</span>
@@ -170,6 +171,9 @@
                         <tbody>
                             {% for config in temp_configurations %}
                             <tr>
+                                <td>
+                                    <span class="badge bg-info">{{ config.room_name }}</span>
+                                </td>
                                 <td>
                                     <span class="temp-range">{{ "%.1f"|format(config.temp_min) }}°C - {{ "%.1f"|format(config.temp_max) }}°C</span>
                                 </td>
@@ -240,6 +244,7 @@
                     <table class="table table-hover mb-0">
                         <thead>
                             <tr>
+                                <th>Room</th>
                                 <th>Humidity Range (%)</th>
                                 <th class="text-center">
                                     <span class="season-badge summer">Summer</span>
@@ -260,6 +265,9 @@
                         <tbody>
                             {% for config in humidity_configurations %}
                             <tr>
+                                <td>
+                                    <span class="badge bg-info">{{ config.room_name }}</span>
+                                </td>
                                 <td>
                                     <span class="temp-range">{{ "%.1f"|format(config.humidity_min) }}% - {{ "%.1f"|format(config.humidity_max) }}%</span>
                                 </td>

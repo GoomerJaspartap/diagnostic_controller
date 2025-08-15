@@ -121,6 +121,18 @@
                             Temperature Range
                         </div>
                         <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="room_id" class="form-label">Room (Optional)</label>
+                                <select class="form-select" id="room_id" name="room_id">
+                                    <option value="">General (All Rooms)</option>
+                                    {% for room in rooms %}
+                                    <option value="{{ room[0] }}">{{ room[1] }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="help-text">Select a specific room for this configuration, or leave as "General" to apply to all rooms</div>
+                            </div>
+                        </div>
+                        <div class="row">
                             <div class="col-md-6">
                                 <label for="temp_min" class="form-label">Minimum Temperature (°C)</label>
                                 <input type="number" 

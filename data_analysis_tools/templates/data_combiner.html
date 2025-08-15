@@ -217,6 +217,23 @@
             z-index: 9999;
         }
         
+        /* Ensure results card is always visible when displayed */
+        #resultsCard[style*="display: block"] {
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
+            z-index: 1000 !important;
+        }
+        
+        /* Force visibility for results */
+        .results-visible {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            position: relative !important;
+            z-index: 1000 !important;
+        }
+        
         .loading-content {
             background: white;
             padding: 30px;
@@ -432,8 +449,23 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/data_cleanup">
-                            <i class="fas fa-broom me-2"></i>Data Cleanup
+                                            <a class="nav-link" href="/data_cleanup">
+                        <i class="fas fa-broom me-2"></i>Data Cleanup
+                    </a>
+                </li>
+                                    <li class="nav-item">
+                        <a class="nav-link" href="/slope_analyzer">
+                            <i class="fas fa-chart-line me-2"></i>Slope Analyzer
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/average_slope_configurations">
+                            <i class="fas fa-calculator me-2"></i>Average Slope Configurations
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/yearly_comparison">
+                            <i class="fas fa-calendar-alt me-2"></i>Yearly Comparison
                         </a>
                     </li>
                 </ul>
@@ -558,6 +590,9 @@
                 <div class="card-header">
                     <i class="fas fa-chart-bar me-2"></i>
                     Combined Data Results
+                    <button class="btn btn-sm btn-outline-light float-end" onclick="forceShowResults()" title="Force show results">
+                        <i class="fas fa-eye"></i>
+                    </button>
                 </div>
                 <div class="card-body">
                     <!-- Processing Statistics -->
@@ -626,6 +661,12 @@
             </div>
             <div class="mt-2" id="progressDetails">
                 <small class="text-muted">Processing files...</small>
+            </div>
+            <div class="mt-2" id="processingStatus" style="display: none;">
+                <small class="text-info">
+                    <i class="fas fa-info-circle me-1"></i>
+                    <span id="statusMessage">Processing...</span>
+                </small>
             </div>
         </div>
     </div>
@@ -1284,11 +1325,22 @@
 
             showLoading('Combining data files...');
             updateProgress(0, `Starting data combination for ${uploadedFiles.length} files...`);
+            
+            // Show warning for large datasets
+            if (uploadedFiles.length > 20) {
+                const warningMessage = `⚠️  Large dataset detected (${uploadedFiles.length} files). This may take several minutes to process. Please be patient and don't close the browser.`;
+                showAlert('info', warningMessage);
+            }
 
             // Start progress simulation for any dataset
             let progressInterval;
             if (uploadedFiles.length > 0) {
                 progressInterval = startProgressSimulation();
+                
+                // For large datasets, show a more realistic progress message
+                if (uploadedFiles.length > 20) {
+                    updateProgress(10, `Processing ${uploadedFiles.length} files - this may take several minutes for large datasets...`);
+                }
             }
 
             const formData = new FormData();
@@ -1309,12 +1361,21 @@
 
             // Add timeout and better error handling
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+            // Increase timeout for large datasets - 15 minutes for 50+ files, 10 minutes for 20+ files, 5 minutes for smaller datasets
+            const fileCount = uploadedFiles.length;
+            const timeoutMs = fileCount > 50 ? 900000 : fileCount > 20 ? 600000 : 300000; // 15min, 10min, 5min
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            console.log(`⏱️  Setting timeout to ${timeoutMs/60000} minutes for ${fileCount} files`);
             
             fetch(endpoint, {
                 method: 'POST',
                 body: formData,
-                signal: controller.signal
+                signal: controller.signal,
+                // Add headers to prevent caching and ensure proper handling
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
             })
             .then(response => {
                 clearTimeout(timeoutId);
@@ -1330,6 +1391,8 @@
             })
             .then(data => {
                 console.log('📥 Response data:', data);
+                console.log('📥 Data keys:', Object.keys(data));
+                console.log('📥 Data success:', data.success);
                 
                 // Clear progress simulation
                 if (progressInterval) {
@@ -1341,9 +1404,14 @@
                     console.log('✅ Data combination successful!');
                     console.log(`📊 Results: ${data.files_combined}/${data.total_files_attempted} files processed`);
                     console.log(`📊 Data size: ${data.total_rows} rows × ${data.total_columns} columns`);
+                    console.log('📊 Preview data length:', data.preview ? data.preview.length : 'undefined');
+                    console.log('📊 CSV content length:', data.csv_content ? data.csv_content.length : 'undefined');
+                    console.log('📊 Excel content length:', data.excel_content ? data.excel_content.length : 'undefined');
                     
                     combinedData = data;
+                    console.log('🎯 About to call showResults...');
                     showResults(data);
+                    console.log('✅ showResults completed');
                     showAlert('success', `Data combined successfully! Processed ${data.files_combined} out of ${data.total_files_attempted} files.`);
                 } else {
                     console.error('❌ Data combination failed:', data.error);
@@ -1367,7 +1435,28 @@
                 hideLoading();
                 
                 if (error.name === 'AbortError') {
-                    showAlert('error', 'Request timed out after 5 minutes. Try with fewer files or use the batch processing option.');
+                    const fileCount = uploadedFiles.length;
+                    const timeoutMinutes = fileCount > 50 ? 15 : fileCount > 20 ? 10 : 5;
+                    const errorMessage = `Request timed out after ${timeoutMinutes} minutes. This dataset (${fileCount} files) is very large and may take longer to process.`;
+                    
+                    // Show error with retry option
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                    alertDiv.innerHTML = `
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        ${errorMessage}
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-outline-danger me-2" onclick="retryDataCombination()">
+                                <i class="fas fa-redo me-1"></i>Retry with longer timeout
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="useBatchProcessing()">
+                                <i class="fas fa-layer-group me-1"></i>Use batch processing
+                            </button>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    
+                    document.getElementById('alerts').appendChild(alertDiv);
                 } else {
                     showAlert('error', 'Error combining data: ' + error.message);
                 }
@@ -1388,20 +1477,49 @@
             
             // Adjust progress speed based on number of files
             const fileCount = uploadedFiles.length;
-            const progressIncrement = fileCount > 100 ? 3 : fileCount > 50 ? 4 : 6;
-            const updateInterval = fileCount > 100 ? 400 : fileCount > 50 ? 300 : 200;
+            const progressIncrement = fileCount > 100 ? 2 : fileCount > 50 ? 3 : fileCount > 20 ? 4 : 6;
+            const updateInterval = fileCount > 100 ? 600 : fileCount > 50 ? 500 : fileCount > 20 ? 400 : 200;
+            
+            // For large datasets, show more realistic progress
+            if (fileCount > 20) {
+                updateProcessingStatus(`Processing ${fileCount} files - this may take several minutes`, true);
+            }
             
             return setInterval(() => {
                 progress += Math.random() * progressIncrement; // Dynamic progress increment
-                if (progress > 90) progress = 90; // Don't go to 100% until complete
+                if (progress > 85) progress = 85; // Don't go to 100% until complete for large datasets
                 
                 const message = messages[Math.floor(progress / 15)] || messages[messages.length - 1];
                 updateProgress(progress, message);
+                
+                // Update status for large datasets
+                if (fileCount > 20 && progress > 50) {
+                    updateProcessingStatus(`Still processing... ${Math.round(progress)}% complete`, true);
+                }
             }, updateInterval);
         }
 
         function showResults(data) {
-            document.getElementById('resultsCard').style.display = 'block';
+            console.log('🎯 showResults called with data:', data);
+            
+            try {
+                // Get the results card element
+                const resultsCard = document.getElementById('resultsCard');
+                if (!resultsCard) {
+                    console.error('❌ Results card element not found!');
+                    showAlert('error', 'Results display element not found. Please refresh the page.');
+                    return;
+                }
+                
+                // Show the results card
+                resultsCard.style.display = 'block';
+                console.log('✅ Results card displayed');
+                
+                // Force the results card to be visible and scrollable
+                resultsCard.style.visibility = 'visible';
+                resultsCard.style.opacity = '1';
+                resultsCard.style.position = 'relative';
+                resultsCard.style.zIndex = '1000';
             
             // Show processing statistics for large datasets
             if (data.total_files_attempted > 50) {
@@ -1458,33 +1576,90 @@
             }
             
             // Check Excel availability
-            if (!data.excel_content || data.excel_content === '') {
-                document.getElementById('excelStatus').style.display = 'block';
-                document.getElementById('excelDownloadBtn').disabled = true;
-                document.getElementById('excelDownloadBtn').classList.add('btn-secondary');
-                document.getElementById('excelDownloadBtn').classList.remove('btn-primary');
-                console.log('⚠️  Excel generation failed or timed out');
-            } else {
-                document.getElementById('excelStatus').style.display = 'none';
-                document.getElementById('excelDownloadBtn').disabled = false;
-                document.getElementById('excelDownloadBtn').classList.remove('btn-secondary');
-                document.getElementById('excelDownloadBtn').classList.add('btn-primary');
-                console.log('✅ Excel file available for download');
+            const excelStatus = document.getElementById('excelStatus');
+            const excelDownloadBtn = document.getElementById('excelDownloadBtn');
+            
+            if (excelStatus && excelDownloadBtn) {
+                if (!data.excel_content || data.excel_content === '') {
+                    excelStatus.style.display = 'block';
+                    excelDownloadBtn.disabled = true;
+                    excelDownloadBtn.classList.add('btn-secondary');
+                    excelDownloadBtn.classList.remove('btn-primary');
+                    console.log('⚠️  Excel generation failed or timed out');
+                } else {
+                    excelStatus.style.display = 'none';
+                    excelDownloadBtn.disabled = false;
+                    excelDownloadBtn.classList.remove('btn-secondary');
+                    excelDownloadBtn.classList.add('btn-primary');
+                    console.log('✅ Excel file available for download');
+                }
             }
+            
+            // Scroll to results
+            resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            console.log('✅ Scrolled to results card');
+            
+        } catch (error) {
+            console.error('❌ Error in showResults:', error);
+            showAlert('error', 'Error displaying results: ' + error.message);
+            
+            // Fallback: Try to show results in a simple alert
+            try {
+                const fallbackMessage = `
+                    Data combined successfully!
+                    Files: ${data.files_combined}/${data.total_files_attempted}
+                    Rows: ${data.total_rows.toLocaleString()}
+                    Columns: ${data.total_columns}
+                    
+                    Use the download buttons below to get your files.
+                `;
+                showAlert('info', fallbackMessage);
+                
+                // Force show the results card as a last resort
+                const resultsCard = document.getElementById('resultsCard');
+                if (resultsCard) {
+                    resultsCard.style.display = 'block';
+                    resultsCard.style.visibility = 'visible';
+                    resultsCard.style.opacity = '1';
+                    resultsCard.style.position = 'relative';
+                    resultsCard.style.zIndex = '1000';
+                    resultsCard.style.backgroundColor = '#fff';
+                    resultsCard.style.border = '2px solid #007bff';
+                }
+            } catch (fallbackError) {
+                console.error('❌ Fallback display also failed:', fallbackError);
+            }
+        }
         }
 
         function downloadCombinedData(fileType = 'csv') {
+            console.log('📥 Download requested for file type:', fileType);
+            console.log('📊 Combined data available:', !!combinedData);
+            
             if (!combinedData) {
-                showAlert('error', 'No combined data available');
+                showAlert('error', 'No combined data available. Please combine your data files first.');
+                return;
+            }
+            
+            // Validate file type
+            if (!['csv', 'xlsx'].includes(fileType)) {
+                showAlert('error', 'Invalid file type. Please use CSV or XLSX.');
                 return;
             }
 
-            let content, filename, mimeType;
+            // Generate timestamp for filename
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            let filename, content, mimeType;
             
             if (fileType === 'csv') {
+                if (!combinedData.csv_content) {
+                    showAlert('error', 'CSV content not available. Please try combining your data again.');
+                    return;
+                }
                 content = combinedData.csv_content;
-                filename = 'combined_data.csv';
+                filename = `combined_data_${timestamp}.csv`;
                 mimeType = 'text/csv';
+                console.log('📄 CSV content length:', content.length);
             } else if (fileType === 'xlsx') {
                 // Check if Excel content is available
                 if (!combinedData.excel_content || combinedData.excel_content === '') {
@@ -1494,27 +1669,37 @@
                 
                 // Convert hex string back to bytes
                 const hexString = combinedData.excel_content;
-                const bytes = new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-                content = bytes;
-                filename = 'combined_data.xlsx';
-                mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            } else {
-                showAlert('error', 'Invalid file type');
-                return;
+                try {
+                    const bytes = new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                    content = bytes;
+                    filename = `combined_data_${timestamp}.xlsx`;
+                    mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                    console.log('📄 Excel content length:', content.length, 'bytes');
+                } catch (hexError) {
+                    console.error('❌ Error converting hex string to bytes:', hexError);
+                    showAlert('error', 'Error processing Excel file. Please use CSV format instead.');
+                    return;
+                }
             }
 
-            // Create and download file
-            const blob = new Blob([content], { type: mimeType });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            
-            showAlert('success', `Combined data downloaded as ${fileType.toUpperCase()} successfully!`);
+            try {
+                // Create and download file
+                const blob = new Blob([content], { type: mimeType });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                showAlert('success', `Combined data downloaded as ${fileType.toUpperCase()} successfully!`);
+                console.log(`✅ File downloaded: ${filename}`);
+            } catch (error) {
+                console.error('❌ Download error:', error);
+                showAlert('error', `Download failed: ${error.message}`);
+            }
         }
 
         function showLoading(message) {
@@ -1539,7 +1724,77 @@
                 progressDetails.innerHTML = `<small class="text-muted">${message}</small>`;
             }
         }
+        
+        function updateProcessingStatus(message, show = true) {
+            const processingStatus = document.getElementById('processingStatus');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            if (processingStatus && statusMessage) {
+                if (show) {
+                    processingStatus.style.display = 'block';
+                    statusMessage.textContent = message;
+                } else {
+                    processingStatus.style.display = 'none';
+                }
+            }
+        }
 
+        function retryDataCombination() {
+            console.log('🔄 Retrying data combination with longer timeout...');
+            // Clear any existing alerts
+            const alerts = document.getElementById('alerts');
+            alerts.innerHTML = '';
+            
+            // Retry with the same files but longer timeout
+            combineData();
+        }
+        
+        function useBatchProcessing() {
+            console.log('📦 Switching to batch processing...');
+            // Clear any existing alerts
+            const alerts = document.getElementById('alerts');
+            alerts.innerHTML = '';
+            
+            // Force use batch processing endpoint
+            const endpoint = '/combine_data_batch';
+            const batchSize = Math.min(25, Math.ceil(uploadedFiles.length / 4)); // Smaller batches
+            
+            console.log(`🔗 Using batch endpoint: ${endpoint} with batch size: ${batchSize}`);
+            
+            // Show info about batch processing
+            showAlert('info', `Switching to batch processing with ${batchSize} files per batch. This may take longer but is more reliable for large datasets.`);
+            
+            // Restart the process with batch processing
+            setTimeout(() => {
+                combineData();
+            }, 1000);
+        }
+        
+        function forceShowResults() {
+            console.log('🔧 Force showing results...');
+            const resultsCard = document.getElementById('resultsCard');
+            if (resultsCard) {
+                resultsCard.style.display = 'block';
+                resultsCard.style.visibility = 'visible';
+                resultsCard.style.opacity = '1';
+                resultsCard.style.position = 'relative';
+                resultsCard.style.zIndex = '1000';
+                resultsCard.style.backgroundColor = '#fff';
+                resultsCard.style.border = '2px solid #007bff';
+                resultsCard.classList.add('results-visible');
+                console.log('✅ Results card forced to be visible');
+                
+                // If we have combined data, show it
+                if (combinedData) {
+                    console.log('📊 Re-displaying combined data...');
+                    showResults(combinedData);
+                }
+            } else {
+                console.error('❌ Results card not found');
+                showAlert('error', 'Results card element not found');
+            }
+        }
+        
         function showAlert(type, message) {
             const alerts = document.getElementById('alerts');
             const alert = document.createElement('div');

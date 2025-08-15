@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Analysis Tools - Average Slope Configurations</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background: #2c3e50;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 0.75rem 0;
+            border-bottom: 3px solid #3498db;
+        }
+        
+        .navbar-brand {
+            color: white !important;
+            font-weight: 600;
+            font-size: 1.3rem;
+            transition: color 0.3s ease;
+        }
+        
+        .navbar-brand:hover {
+            color: #3498db !important;
+        }
+        
+        .navbar-toggler {
+            border: none;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        .navbar-toggler:focus {
+            box-shadow: none;
+        }
+        
+        .nav-link {
+            color: #ecf0f1 !important;
+            font-weight: 500;
+            padding: 0.5rem 1rem !important;
+            margin: 0 0.25rem;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .nav-link:hover {
+            color: white !important;
+            background-color: #34495e;
+        }
+        
+        .nav-link.active {
+            color: white !important;
+            font-weight: 600;
+            background-color: #3498db;
+        }
+        
+        .nav-link.active::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #3498db;
+        }
+        
+        .card {
+            border-radius: 15px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #003366 0%, #F47C20 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #003366 0%, #F47C20 100%) !important;
+            border: none !important;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-outline-primary {
+            color: #003366 !important;
+            border-color: #003366 !important;
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: #003366 !important;
+            color: #fff !important;
+        }
+        
+        h3, h2 {
+            color: #003366;
+        }
+        
+        .alert-danger {
+            background-color: #F47C20;
+            color: #fff;
+            border: none;
+        }
+        
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            margin: 20px;
+            padding: 30px;
+        }
+        
+        .upload-area {
+            border: 3px dashed #003366;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: rgba(0, 51, 102, 0.05);
+            transition: all 0.3s ease;
+        }
+        
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: rgba(118, 75, 162, 0.05);
+        }
+        
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: rgba(40, 167, 69, 0.1);
+        }
+        
+        .file-info {
+            background: #e3f2fd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .parameter-group {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .parameter-group h6 {
+            color: #003366;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: #003366;
+            box-shadow: 0 0 0 0.2rem rgba(0, 51, 102, 0.25);
+        }
+        
+        .preview-table {
+            max-height: 400px;
+            overflow-y: auto;
+            border-radius: 10px;
+        }
+        
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        .loading-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .info-box {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        
+        .result-card {
+            background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 20px;
+            border-left: 4px solid #4caf50;
+        }
+        
+        .sheet-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        
+        .sheet-item {
+            background: white;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-left: 3px solid #003366;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="/static/logo.png" alt="Company Logo" style="height: 40px; margin-right: 10px;">
+                <span style="font-size: 1.4rem; font-weight: 600;">Data Analysis Tools</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="fas fa-chart-line me-2"></i>Threshold Analysis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/graph_generator">
+                            <i class="fas fa-chart-bar me-2"></i>Graph Generator
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/data_combiner">
+                            <i class="fas fa-object-group me-2"></i>Data Combiner
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/data_cleanup">
+                            <i class="fas fa-broom me-2"></i>Data Cleanup
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/slope_analyzer">
+                            <i class="fas fa-chart-line me-2"></i>Slope Analyzer
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/average_slope_configurations" aria-current="page">
+                            <i class="fas fa-calculator me-2"></i>Average Slope Configurations
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container-fluid">
+        <div class="main-container">
+            <div class="text-center mb-4">
+                <h1 class="display-4" style="color: #003366;">
+                    <i class="fas fa-calculator me-3"></i>
+                    Average Slope Configurations
+                </h1>
+                <p class="lead text-muted">Average slope configuration data across multiple years (sheets) while maintaining the same format</p>
+            </div>
+
+            <!-- Instructions -->
+            <div class="info-box">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>How it works:</strong> Upload an Excel file with multiple sheets where each sheet represents data for a different year. The tool will average the values across all sheets for each temperature range and season/category combination, excluding zero values from the calculation.
+            </div>
+
+            <!-- File Upload Section -->
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-upload me-2"></i>
+                    Step 1: Upload Excel File
+                </div>
+                <div class="card-body">
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                        <h5>Drag and drop your Excel file here</h5>
+                        <p class="text-muted">or</p>
+                        <input type="file" id="fileInput" class="d-none" accept=".xlsx,.xls">
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-folder-open me-2"></i>
+                            Choose File
+                        </button>
+                        <p class="text-muted mt-3">Supported formats: .xlsx, .xls</p>
+                        <p class="text-muted"><small>Each sheet should represent data for a different year with the same format</small></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Information -->
+            <div id="fileInfo" class="file-info" style="display: none;">
+                <h6><i class="fas fa-info-circle me-2"></i>File Information</h6>
+                <div id="fileDetails"></div>
+            </div>
+
+            <!-- Processing Section -->
+            <div class="card" id="processingCard" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-cog me-2"></i>
+                    Step 2: Process Data
+                </div>
+                <div class="card-body">
+                    <div class="info-box">
+                        <i class="fas fa-lightbulb me-2"></i>
+                        <strong>Data Format Expected:</strong> Each sheet should have columns for Min Temp, Max Temp, and season/category columns (e.g., Summer Positive, Summer Negative, Fall Positive, etc.). The tool will average values across all sheets for each temperature range and category.
+                    </div>
+                    
+                    <button class="btn btn-primary btn-lg" id="processBtn" onclick="processData()">
+                        <i class="fas fa-calculator me-2"></i>
+                        Average Data Across Sheets
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="card" id="resultsCard" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-download me-2"></i>
+                    Step 3: Download Results
+                </div>
+                <div class="card-body">
+                    <div class="result-card">
+                        <h5><i class="fas fa-check-circle me-2"></i>Processing Complete!</h5>
+                        <div id="resultDetails"></div>
+                        <div class="text-center mt-3">
+                            <a href="#" id="downloadLink" class="btn btn-success btn-lg">
+                                <i class="fas fa-download me-2"></i>
+                                Download Averaged Data
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading" id="loading">
+        <div class="loading-content">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h5>Processing Data...</h5>
+            <p class="text-muted">Please wait while we average your data across all sheets</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentFile = null;
+        let sheetNames = [];
+
+        // File upload handling
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileDetails = document.getElementById('fileDetails');
+        const processingCard = document.getElementById('processingCard');
+        const resultsCard = document.getElementById('resultsCard');
+        const resultDetails = document.getElementById('resultDetails');
+        const downloadLink = document.getElementById('downloadLink');
+        const loading = document.getElementById('loading');
+
+        // Drag and drop functionality
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.name.match(/\.(xlsx|xls)$/i)) {
+                alert('Please select an Excel file (.xlsx or .xls)');
+                return;
+            }
+
+            currentFile = file;
+            
+            // Display file information
+            const fileSize = (file.size / 1024 / 1024).toFixed(2);
+            fileDetails.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>Filename:</strong> ${file.name}<br>
+                        <strong>Size:</strong> ${fileSize} MB<br>
+                        <strong>Type:</strong> ${file.type || 'Excel file'}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Last Modified:</strong> ${new Date(file.lastModified).toLocaleString()}
+                    </div>
+                </div>
+            `;
+            
+            fileInfo.style.display = 'block';
+            processingCard.style.display = 'block';
+            resultsCard.style.display = 'none';
+        }
+
+        function processData() {
+            if (!currentFile) {
+                alert('Please select a file first');
+                return;
+            }
+
+            loading.style.display = 'flex';
+            
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            fetch('/average_data', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    resultDetails.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Output File:</strong> ${data.filename}<br>
+                                <strong>Sheets Processed:</strong> ${data.sheets_processed}<br>
+                                <strong>Rows in Result:</strong> ${data.rows_in_result}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Processing:</strong> Complete<br>
+                                <strong>Zero Values:</strong> Excluded from averaging<br>
+                                <strong>Format:</strong> Same as input
+                            </div>
+                        </div>
+                    `;
+                    
+                    downloadLink.href = data.download_url;
+                    resultsCard.style.display = 'block';
+                    
+                    // Scroll to results
+                    resultsCard.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                console.error('Error:', error);
+                alert('Error processing file. Please try again.');
+            });
+        }
+    </script>
+</body>
+</html>

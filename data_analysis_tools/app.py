@@ -2049,5 +2049,513 @@ def test_connection():
 def static_files(filename):
     return send_from_directory('static', filename)
 
+@app.route('/slope_analyzer')
+def slope_analyzer():
+    return render_template('slope_analyzer.html')
+
+@app.route('/yearly_comparison')
+def yearly_comparison():
+    return render_template('yearly_comparison.html')
+
+@app.route('/yearly_comparison', methods=['POST'])
+def process_yearly_comparison():
+    """Process Excel files for yearly comparison analysis"""
+    print("🚀 Starting yearly comparison analysis...")
+    
+    if 'files' not in request.files:
+        print("❌ No files in request")
+        return jsonify({'error': 'No files uploaded'})
+    
+    files = request.files.getlist('files')
+    
+    if not files:
+        print("❌ No files selected")
+        return jsonify({'error': 'No files selected'})
+    
+    try:
+        import pandas as pd
+        import numpy as np
+        from io import BytesIO
+        
+        # Constants
+        SEASONS = ["Summer", "Fall", "Winter"]
+        SLOPES = ["Positive", "Negative"]
+        
+        all_data = []
+        processed_files = 0
+        
+        print(f"📁 Processing {len(files)} files...")
+        
+        for i, file in enumerate(files):
+            if file.filename == '':
+                continue
+                
+            if file and allowed_file(file.filename):
+                print(f"📄 Processing file {i+1}/{len(files)}: {file.filename}")
+                
+                try:
+                    # Read Excel file with two header rows
+                    df = pd.read_excel(file, header=[0, 1])
+                    
+                    # Clean multi-index columns
+                    if isinstance(df.columns, pd.MultiIndex):
+                        cols = []
+                        for top, sub in df.columns:
+                            top = str(top).strip()
+                            sub = "" if (pd.isna(sub) or str(sub).startswith("Unnamed:")) else str(sub).strip()
+                            cols.append((top, sub))
+                        df.columns = pd.MultiIndex.from_tuples(cols)
+                    
+                    # Try to find Min/Max temperature columns
+                    min_temp_col = None
+                    max_temp_col = None
+                    
+                    for col in df.columns:
+                        col_name = str(col[0]).strip().lower() if isinstance(col, tuple) else str(col).strip().lower()
+                        if 'min temp' in col_name:
+                            min_temp_col = col
+                        elif 'max temp' in col_name:
+                            max_temp_col = col
+                    
+                    if min_temp_col is None or max_temp_col is None:
+                        print(f"⚠️  Could not find Min/Max temperature columns in {file.filename}")
+                        continue
+                    
+                    # Extract year from filename or sheet name
+                    try:
+                        year = int(file.filename.split('.')[0])
+                    except:
+                        year = file.filename.split('.')[0]
+                    
+                    # Process temperature data
+                    min_series = pd.to_numeric(df[min_temp_col], errors='coerce')
+                    max_series = pd.to_numeric(df[max_temp_col], errors='coerce')
+                    
+                    # Drop rows with missing Min/Max
+                    mask = min_series.notna() & max_series.notna()
+                    if not mask.any():
+                        print(f"⚠️  No valid temperature data in {file.filename}")
+                        continue
+                    
+                    min_series = min_series[mask]
+                    max_series = max_series[mask]
+                    
+                    # Create base dataframe
+                    base = pd.DataFrame({
+                        "year": year,
+                        "min_temp": min_series.values,
+                        "max_temp": max_series.values,
+                    })
+                    
+                    # Create temperature bins
+                    min_i = pd.Series(base["min_temp"].round(0)).astype("Int64")
+                    max_i = pd.Series(base["max_temp"].round(0)).astype("Int64")
+                    base["temp_bin"] = min_i.astype(str) + " to " + max_i.astype(str)
+                    
+                    # Process season/slope data
+                    for season in SEASONS:
+                        for slope in SLOPES:
+                            vals = np.zeros(len(base), dtype=float)
+                            
+                            # Look for matching columns
+                            for col in df.columns:
+                                if isinstance(col, tuple):
+                                    col_season = str(col[0]).strip()
+                                    col_slope = str(col[1]).strip()
+                                    if (col_season.lower() == season.lower() and 
+                                        col_slope.lower() == slope.lower()):
+                                        vals = pd.to_numeric(df.loc[mask, col], errors='coerce').fillna(0.0).values
+                                        break
+                            
+                            chunk = base.copy()
+                            chunk["season"] = season
+                            chunk["slope"] = slope
+                            chunk["value"] = vals
+                            all_data.append(chunk)
+                    
+                    processed_files += 1
+                    print(f"✅ File {i+1} processed successfully")
+                    
+                except Exception as e:
+                    print(f"❌ Error processing {file.filename}: {e}")
+                    continue
+        
+        if not all_data:
+            return jsonify({'error': 'No valid data found in uploaded files'})
+        
+        print(f"📊 Combining data from {processed_files} files...")
+        
+        # Combine all data
+        long_df = pd.concat(all_data, ignore_index=True)
+        
+        # Order temperature bins
+        temp_bins = long_df[["min_temp", "max_temp", "temp_bin"]].drop_duplicates().sort_values(["min_temp", "max_temp"])["temp_bin"].tolist()
+        long_df["temp_bin"] = pd.Categorical(long_df["temp_bin"], categories=temp_bins, ordered=True)
+        
+        # Make year numeric if possible
+        try:
+            long_df["year"] = long_df["year"].astype(int)
+        except:
+            pass
+        
+        # Generate statistics
+        years = sorted(long_df["year"].unique().tolist(), key=lambda x: (isinstance(x, str), x))
+        temp_ranges = list(long_df["temp_bin"].cat.categories)
+        
+        # Create comprehensive chart data for all combinations
+        chart_data = {}
+        
+        print(f"🔧 Creating chart data for {len(SEASONS)} seasons × {len(SLOPES)} slopes...")
+        
+        # Generate data for each season/slope combination
+        for season in SEASONS:
+            for slope in SLOPES:
+                key = f"{season}_{slope}"
+                sub_df = long_df[(long_df["season"] == season) & (long_df["slope"] == slope)]
+                
+                print(f"📊 Processing {season} • {slope}: {len(sub_df)} records")
+                
+                if not sub_df.empty:
+                    # Create pivot table: rows=temp_bin, columns=year, values=value
+                    pivot = sub_df.pivot_table(index="temp_bin", columns="year", values="value", aggfunc="mean")
+                    pivot = pivot.reindex(index=temp_ranges, columns=years, fill_value=0)
+                    
+                    chart_data[key] = {
+                        'temp_ranges': temp_ranges,
+                        'years': years,
+                        'data': pivot.values.tolist(),
+                        'season': season,
+                        'slope': slope
+                    }
+                    
+                    print(f"✅ Created chart data for {key}: {len(temp_ranges)} temp ranges × {len(years)} years")
+                else:
+                    print(f"⚠️  No data for {key}")
+        
+        print(f"📈 Chart data created: {len(chart_data)} combinations")
+        print(f"🔑 Chart data keys: {list(chart_data.keys())}")
+        
+        # Generate output files
+        csv_content = long_df.to_csv(index=False)
+        
+        # Create Excel file
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+            long_df.to_excel(writer, sheet_name='Yearly Comparison Data', index=False)
+        excel_content = excel_buffer.getvalue()
+        
+        result = {
+            'success': True,
+            'total_years': len(years),
+            'total_temp_ranges': len(temp_ranges),
+            'total_records': len(long_df),
+            'seasons': SEASONS,
+            'slopes': SLOPES,
+            'years': years,
+            'temp_ranges': temp_ranges,
+            'chart_data': chart_data,
+            'csv_content': csv_content,
+            'excel_content': excel_buffer.getvalue().hex()  # Convert bytes to hex for JSON
+        }
+        
+        print(f"🎉 Yearly comparison analysis completed successfully!")
+        print(f"📊 Results: {len(years)} years, {len(temp_ranges)} temperature ranges, {len(long_df)} records")
+        print(f"📈 Final chart data structure: {list(chart_data.keys())}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in yearly comparison analysis: {str(e)}")
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Error analyzing data: {str(e)}'})
+
+@app.route('/generate_slope_graph', methods=['POST'])
+def generate_slope_graph():
+    data = request.get_json()
+    
+    try:
+        # Load the data
+        filepath = os.path.join(UPLOAD_FOLDER, data['filename'])
+        sheet_name = data.get('sheet_name', 0)
+        skip_rows = data.get('skip_rows', 0)
+        
+        if filepath.endswith('.csv'):
+            df = pd.read_csv(filepath, skiprows=skip_rows)
+        else:
+            df = pd.read_excel(filepath, sheet_name=sheet_name, skiprows=skip_rows)
+        
+        # Parse datetime column
+        x_col = data['x_axis']
+        y_col = data['y_axis']
+        
+        if not parse_datetime_column(df, x_col):
+            return jsonify({'error': f'Could not parse datetime column: {x_col}. Please ensure the column contains valid datetime values.'})
+        
+        # Clean the data
+        datetime_columns = [x_col]
+        numeric_columns = [y_col]
+        df_clean = clean_dataframe(df, datetime_columns, numeric_columns)
+        
+        if df_clean.empty:
+            return jsonify({'error': 'No valid data points found after cleaning. Please check your data for missing or invalid values.'})
+        
+        # Convert datetime to numeric for easier handling
+        df_clean['time_numeric'] = (df_clean[x_col] - df_clean[x_col].min()).dt.total_seconds()
+        
+        # Prepare data for plotting
+        times = df_clean[x_col].tolist()
+        values = df_clean[y_col].tolist()
+        time_numeric = df_clean['time_numeric'].tolist()
+        
+        # Convert datetime objects to strings for Plotly
+        times_str = [t.strftime('%Y-%m-%d %H:%M:%S') if hasattr(t, 'strftime') else str(t) for t in times]
+        
+        return jsonify({
+            'success': True,
+            'times': times_str,
+            'values': values,
+            'time_numeric': time_numeric,
+            'total_points': len(times)
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in generate_slope_graph: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Error generating slope graph: {str(e)}'})
+
+@app.route('/calculate_slope', methods=['POST'])
+def calculate_slope():
+    data = request.get_json()
+    
+    try:
+        # Get the two selected points
+        point1 = data['point1']  # {x: time_index, y: value}
+        point2 = data['point2']  # {x: time_index, y: value}
+        time_numeric = data['time_numeric']  # Array of numeric time values
+        values = data['values']  # Array of y values
+        times = data['times']    # Array of time strings
+        
+        # Get the actual time and value data for the selected points
+        x1 = time_numeric[point1['x']]
+        y1 = values[point1['x']]
+        x2 = time_numeric[point2['x']]
+        y2 = values[point2['x']]
+        
+        # Calculate slope
+        if x2 - x1 == 0:
+            return jsonify({'error': 'Cannot calculate slope: points have the same x-coordinate (vertical line)'})
+        
+        slope = (y2 - y1) / (x2 - x1)
+        
+        # Calculate y-intercept (b in y = mx + b)
+        b = y1 - slope * x1
+        
+        # Generate line points for visualization
+        # Extend the line slightly beyond the selected points
+        margin = (x2 - x1) * 0.1  # 10% margin
+        line_x1 = x1 - margin
+        line_x2 = x2 + margin
+        line_y1 = slope * line_x1 + b
+        line_y2 = slope * line_x2 + b
+        
+        # Convert back to datetime strings for display
+        time_min = min(time_numeric)
+        line_time1 = pd.Timestamp(times[0]) + pd.Timedelta(seconds=line_x1)
+        line_time2 = pd.Timestamp(times[0]) + pd.Timedelta(seconds=line_x2)
+        
+        line_times = [line_time1.strftime('%Y-%m-%d %H:%M:%S'), line_time2.strftime('%Y-%m-%d %H:%M:%S')]
+        line_values = [line_y1, line_y2]
+        
+        # Format the equation
+        if b >= 0:
+            equation = f"y = {slope:.4f}x + {b:.4f}"
+        else:
+            equation = f"y = {slope:.4f}x - {abs(b):.4f}"
+        
+        # Calculate R-squared (coefficient of determination)
+        # Use all points between the selected points
+        start_idx = min(point1['x'], point2['x'])
+        end_idx = max(point1['x'], point2['x'])
+        
+        x_range = time_numeric[start_idx:end_idx+1]
+        y_range = values[start_idx:end_idx+1]
+        
+        # Calculate predicted values
+        y_pred = [slope * x + b for x in x_range]
+        
+        # Calculate R-squared
+        y_mean = sum(y_range) / len(y_range)
+        ss_tot = sum((y - y_mean) ** 2 for y in y_range)
+        ss_res = sum((y - y_pred[i]) ** 2 for i, y in enumerate(y_range))
+        
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+        
+        return jsonify({
+            'success': True,
+            'slope': slope,
+            'y_intercept': b,
+            'equation': equation,
+            'r_squared': r_squared,
+            'line_times': line_times,
+            'line_values': line_values,
+            'point1_data': {
+                'time': times[point1['x']],
+                'value': y1,
+                'index': point1['x']
+            },
+            'point2_data': {
+                'time': times[point2['x']],
+                'value': y2,
+                'index': point2['x']
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in calculate_slope: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Error calculating slope: {str(e)}'})
+
+@app.route('/average_slope_configurations')
+def average_slope_configurations():
+    return render_template('average_slope_configurations.html')
+
+@app.route('/average_data', methods=['POST'])
+def average_data():
+    try:
+        # Get uploaded file
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'})
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'})
+        
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Please upload an Excel file (.xlsx, .xls)'})
+        
+        # Save file temporarily
+        filepath = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
+        file.save(filepath)
+        
+        # Read all sheets from the Excel file
+        excel_file = pd.ExcelFile(filepath)
+        sheet_names = excel_file.sheet_names
+        
+        if len(sheet_names) < 2:
+            return jsonify({'error': 'Excel file must contain at least 2 sheets (years) to average'})
+        
+        # Dictionary to store data from all sheets
+        all_data = {}
+        
+        # Process each sheet
+        for sheet_name in sheet_names:
+            try:
+                df = pd.read_excel(filepath, sheet_name=sheet_name)
+                
+                # Skip if the sheet is empty or doesn't have the expected format
+                if df.empty or len(df.columns) < 8:
+                    continue
+                
+                # Store the data with sheet name as key
+                all_data[sheet_name] = df
+                
+            except Exception as e:
+                print(f"Error reading sheet {sheet_name}: {str(e)}")
+                continue
+        
+        if not all_data:
+            return jsonify({'error': 'No valid data found in any sheet'})
+        
+        # Get the first sheet to understand the structure
+        first_sheet = list(all_data.values())[0]
+        
+        # Extract temperature ranges and column structure
+        temp_ranges = []
+        for _, row in first_sheet.iterrows():
+            min_temp = row.iloc[0]  # First column
+            max_temp = row.iloc[1]  # Second column
+            if pd.notna(min_temp) and pd.notna(max_temp):
+                temp_ranges.append((min_temp, max_temp))
+        
+        # Get column headers for seasons and categories
+        season_columns = []
+        for col in first_sheet.columns[2:]:  # Skip Min Temp and Max Temp columns
+            season_columns.append(col)
+        
+        # Initialize averaged data structure
+        averaged_data = []
+        
+        # Process each temperature range
+        for min_temp, max_temp in temp_ranges:
+            row_data = {'Min Temp': min_temp, 'Max Temp': max_temp}
+            
+            # For each season/category column
+            for col in season_columns:
+                values = []
+                
+                # Collect values from all sheets for this temperature range and column
+                for sheet_name, df in all_data.items():
+                    try:
+                        # Find the row with matching temperature range
+                        matching_rows = df[(df.iloc[:, 0] == min_temp) & (df.iloc[:, 1] == max_temp)]
+                        if not matching_rows.empty:
+                            value = matching_rows.iloc[0][col]
+                            if pd.notna(value) and value != 0:  # Only include non-zero values
+                                values.append(float(value))
+                    except Exception as e:
+                        print(f"Error processing {sheet_name}, column {col}: {str(e)}")
+                        continue
+                
+                # Calculate average if we have values
+                if values:
+                    avg_value = sum(values) / len(values)
+                    row_data[col] = round(avg_value, 5)  # Round to 5 decimal places
+                else:
+                    row_data[col] = 0
+            
+            # Only include rows that have at least one non-zero value
+            has_non_zero = any(row_data[col] != 0 for col in season_columns)
+            if has_non_zero:
+                averaged_data.append(row_data)
+        
+        # Create DataFrame from averaged data
+        result_df = pd.DataFrame(averaged_data)
+        
+        # Generate output filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_filename = f'averaged_data_{timestamp}.xlsx'
+        output_path = os.path.join(UPLOAD_FOLDER, output_filename)
+        
+        # Save to Excel
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            result_df.to_excel(writer, sheet_name='Averaged_Data', index=False)
+        
+        # Clean up uploaded file
+        os.remove(filepath)
+        
+        return jsonify({
+            'success': True,
+            'filename': output_filename,
+            'sheets_processed': len(all_data),
+            'rows_in_result': len(result_df),
+            'download_url': f'/download_averaged_file/{output_filename}'
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in average_data: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Error processing data: {str(e)}'})
+
+@app.route('/download_averaged_file/<filename>')
+def download_averaged_file(filename):
+    try:
+        return send_from_directory(UPLOAD_FOLDER, filename, as_attachment=True)
+    except Exception as e:
+        return jsonify({'error': f'Error downloading file: {str(e)}'})
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5003) 
+    app.run(debug=True, host='0.0.0.0', port=5003)

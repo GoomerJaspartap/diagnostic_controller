@@ -155,20 +155,44 @@
         <div class="current-values">
             <h5><i class="fas fa-info-circle me-1"></i>Current Configuration</h5>
             <div class="current-value-item">
+                <span class="current-value-label">Room:</span>
+                <span class="current-value-data">
+                    {% if config.room_id %}
+                        {% for room in rooms %}
+                            {% if room[0] == config.room_id %}{{ room[1] }}{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        General (All Rooms)
+                    {% endif %}
+                </span>
+            </div>
+            <div class="current-value-item">
                 <span class="current-value-label">Temperature Range:</span>
                 <span class="current-value-data">{{ "%.1f"|format(config.temp_min) }}°C - {{ "%.1f"|format(config.temp_max) }}°C</span>
             </div>
             <div class="current-value-item">
-                <span class="current-value-label">Summer Slope:</span>
-                <span class="current-value-data">{{ "%.3f"|format(config.summer_slope) }}</span>
+                <span class="current-value-label">Summer Positive Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.summer_positive_slope) }}</span>
             </div>
             <div class="current-value-item">
-                <span class="current-value-label">Fall Slope:</span>
-                <span class="current-value-data">{{ "%.3f"|format(config.fall_slope) }}</span>
+                <span class="current-value-label">Summer Negative Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.summer_negative_slope) }}</span>
             </div>
             <div class="current-value-item">
-                <span class="current-value-label">Winter Slope:</span>
-                <span class="current-value-data">{{ "%.3f"|format(config.winter_slope) }}</span>
+                <span class="current-value-label">Fall Positive Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.fall_positive_slope) }}</span>
+            </div>
+            <div class="current-value-item">
+                <span class="current-value-label">Fall Negative Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.fall_negative_slope) }}</span>
+            </div>
+            <div class="current-value-item">
+                <span class="current-value-label">Winter Positive Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.winter_positive_slope) }}</span>
+            </div>
+            <div class="current-value-item">
+                <span class="current-value-label">Winter Negative Slope:</span>
+                <span class="current-value-data">{{ "%.3f"|format(config.winter_negative_slope) }}</span>
             </div>
         </div>
 
@@ -181,6 +205,18 @@
                         <div class="temp-range-title">
                             <i class="fas fa-thermometer-half"></i>
                             Temperature Range
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12 mb-3">
+                                <label for="room_id" class="form-label">Room (Optional)</label>
+                                <select class="form-select" id="room_id" name="room_id">
+                                    <option value="">General (All Rooms)</option>
+                                    {% for room in rooms %}
+                                    <option value="{{ room[0] }}" {% if config.room_id == room[0] %}selected{% endif %}>{{ room[1] }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="help-text">Select a specific room for this configuration, or leave as "General" to apply to all rooms</div>
+                            </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6">
@@ -214,20 +250,36 @@
                     <div class="season-section">
                         <div class="season-title">
                             <span class="season-badge summer">Summer</span>
-                            <span>Summer Season Slope</span>
+                            <span>Summer Season Slopes</span>
                         </div>
                         <div class="row">
-                            <div class="col-md-12">
-                                <label for="summer_slope" class="form-label">Summer Slope Value</label>
+                            <div class="col-md-6">
+                                <label for="summer_positive_slope" class="form-label">
+                                    <i class="fas fa-arrow-up text-success"></i> Positive Slope
+                                </label>
                                 <input type="number" 
                                        class="form-control" 
-                                       id="summer_slope" 
-                                       name="summer_slope" 
+                                       id="summer_positive_slope" 
+                                       name="summer_positive_slope" 
                                        step="0.001" 
                                        required 
-                                       value="{{ "%.3f"|format(config.summer_slope) }}"
+                                       value="{{ "%.3f"|format(config.summer_positive_slope) }}"
                                        placeholder="e.g., 0.125">
-                                <div class="help-text">Enter the slope value for summer season calculations</div>
+                                <div class="help-text">Slope when target > start value</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="summer_negative_slope" class="form-label">
+                                    <i class="fas fa-arrow-down text-danger"></i> Negative Slope
+                                </label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="summer_negative_slope" 
+                                       name="summer_negative_slope" 
+                                       step="0.001" 
+                                       required 
+                                       value="{{ "%.3f"|format(config.summer_negative_slope) }}"
+                                       placeholder="e.g., 0.100">
+                                <div class="help-text">Slope when target < start value</div>
                             </div>
                         </div>
                     </div>
@@ -236,20 +288,36 @@
                     <div class="season-section">
                         <div class="season-title">
                             <span class="season-badge fall">Fall</span>
-                            <span>Fall Season Slope</span>
+                            <span>Fall Season Slopes</span>
                         </div>
                         <div class="row">
-                            <div class="col-md-12">
-                                <label for="fall_slope" class="form-label">Fall Slope Value</label>
+                            <div class="col-md-6">
+                                <label for="fall_positive_slope" class="form-label">
+                                    <i class="fas fa-arrow-up text-success"></i> Positive Slope
+                                </label>
                                 <input type="number" 
                                        class="form-control" 
-                                       id="fall_slope" 
-                                       name="fall_slope" 
+                                       id="fall_positive_slope" 
+                                       name="fall_positive_slope" 
                                        step="0.001" 
                                        required 
-                                       value="{{ "%.3f"|format(config.fall_slope) }}"
+                                       value="{{ "%.3f"|format(config.fall_positive_slope) }}"
                                        placeholder="e.g., 0.150">
-                                <div class="help-text">Enter the slope value for fall season calculations</div>
+                                <div class="help-text">Slope when target > start value</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fall_negative_slope" class="form-label">
+                                    <i class="fas fa-arrow-down text-danger"></i> Negative Slope
+                                </label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="fall_negative_slope" 
+                                       name="fall_negative_slope" 
+                                       step="0.001" 
+                                       required 
+                                       value="{{ "%.3f"|format(config.fall_negative_slope) }}"
+                                       placeholder="e.g., 0.120">
+                                <div class="help-text">Slope when target < start value</div>
                             </div>
                         </div>
                     </div>
@@ -258,20 +326,36 @@
                     <div class="season-section">
                         <div class="season-title">
                             <span class="season-badge winter">Winter</span>
-                            <span>Winter Season Slope</span>
+                            <span>Winter Season Slopes</span>
                         </div>
                         <div class="row">
-                            <div class="col-md-12">
-                                <label for="winter_slope" class="form-label">Winter Slope Value</label>
+                            <div class="col-md-6">
+                                <label for="winter_positive_slope" class="form-label">
+                                    <i class="fas fa-arrow-up text-success"></i> Positive Slope
+                                </label>
                                 <input type="number" 
                                        class="form-control" 
-                                       id="winter_slope" 
-                                       name="winter_slope" 
+                                       id="winter_positive_slope" 
+                                       name="winter_positive_slope" 
                                        step="0.001" 
                                        required 
-                                       value="{{ "%.3f"|format(config.winter_slope) }}"
+                                       value="{{ "%.3f"|format(config.winter_positive_slope) }}"
                                        placeholder="e.g., 0.175">
-                                <div class="help-text">Enter the slope value for winter season calculations</div>
+                                <div class="help-text">Slope when target > start value</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="winter_negative_slope" class="form-label">
+                                    <i class="fas fa-arrow-down text-danger"></i> Negative Slope
+                                </label>
+                                <input type="number" 
+                                       class="form-control" 
+                                       id="winter_negative_slope" 
+                                       name="winter_negative_slope" 
+                                       step="0.001" 
+                                       required 
+                                       value="{{ "%.3f"|format(config.winter_negative_slope) }}"
+                                       placeholder="e.g., 0.150">
+                                <div class="help-text">Slope when target < start value</div>
                             </div>
                         </div>
                     </div>

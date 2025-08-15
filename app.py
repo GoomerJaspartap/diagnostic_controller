@@ -37,20 +37,22 @@ def init_db():
     
     # Create tables if they don't exist
     c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            username VARCHAR(255) PRIMARY KEY,
-            password VARCHAR(255),
-            name VARCHAR(255)
-        )
-    ''')
-    
-    c.execute('''
         CREATE TABLE IF NOT EXISTS rooms (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) UNIQUE NOT NULL,
             description TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             refresh_time INTEGER
+        )
+    ''')
+    
+
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username VARCHAR(255) PRIMARY KEY,
+            password VARCHAR(255),
+            name VARCHAR(255)
         )
     ''')
     
@@ -149,6 +151,7 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS slope_configurations (
             id SERIAL PRIMARY KEY,
+            room_id INTEGER REFERENCES rooms(id),
             temp_min REAL NOT NULL,
             temp_max REAL NOT NULL,
             summer_positive_slope REAL NOT NULL,
@@ -165,6 +168,7 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS humidity_slope_configurations (
             id SERIAL PRIMARY KEY,
+            room_id INTEGER REFERENCES rooms(id),
             humidity_min REAL NOT NULL,
             humidity_max REAL NOT NULL,
             summer_positive_slope REAL NOT NULL,
@@ -296,8 +300,8 @@ def get_season_from_temperature(temperature):
     except Exception as e:
         return "Unknown"
 
-def calculate_average_slope(start_value, target_value, temperature, humidity, code_type):
-    """Calculate average slope based on temperature/humidity ranges and season"""
+def calculate_average_slope(start_value, target_value, temperature, humidity, code_type, room_id=None):
+    """Calculate average slope based on temperature/humidity ranges and season, considering room-specific configurations"""
     try:
         # Get current season based on temperature
         season = get_season_from_temperature(temperature)
@@ -308,31 +312,104 @@ def calculate_average_slope(start_value, target_value, temperature, humidity, co
         if code_type == 'Temperature':
             # Get temperature slope configurations that overlap with the START and TARGET value range
             # We need to find all ranges that contain any part of the start_value to target_value range
-            c.execute('''
-                SELECT temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
-                       fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
-                FROM slope_configurations 
-                WHERE (temp_min <= %s AND temp_max >= %s) OR  -- Start value falls in range
-                      (temp_min <= %s AND temp_max >= %s) OR  -- Target value falls in range
-                      (temp_min >= %s AND temp_max <= %s) OR  -- Range is completely within start-target
-                      (temp_min <= %s AND temp_max >= %s)     -- Range completely contains start-target
-                ORDER BY temp_min
-            ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+            # If room_id is provided, prioritize room-specific configurations, then fall back to general ones
+            if room_id:
+                # First try to find room-specific configurations
+                c.execute('''
+                    SELECT temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+                           fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
+                    FROM slope_configurations 
+                    WHERE room_id = %s AND (
+                        (temp_min <= %s AND temp_max >= %s) OR  -- Start value falls in range
+                        (temp_min <= %s AND temp_max >= %s) OR  -- Target value falls in range
+                        (temp_min >= %s AND temp_max <= %s) OR  -- Range is completely within start-target
+                        (temp_min <= %s AND temp_max >= %s)     -- Range completely contains start-target
+                    )
+                    ORDER BY temp_min
+                ''', (room_id, start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+                
+                configs = c.fetchall()
+                
+                # If no room-specific configs found, fall back to general configurations
+                if not configs:
+                    c.execute('''
+                        SELECT temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+                               fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
+                        FROM slope_configurations 
+                        WHERE room_id IS NULL AND (
+                            (temp_min <= %s AND temp_max >= %s) OR  -- Start value falls in range
+                            (temp_min <= %s AND temp_max >= %s) OR  -- Target value falls in range
+                            (temp_min >= %s AND temp_max <= %s) OR  -- Range is completely within start-target
+                            (temp_min <= %s AND temp_max >= %s)     -- Range completely contains start-target
+                        )
+                        ORDER BY temp_min
+                    ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+                    configs = c.fetchall()
+            else:
+                # Use general configurations (room_id is NULL)
+                c.execute('''
+                    SELECT temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+                           fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
+                    FROM slope_configurations 
+                    WHERE room_id IS NULL AND (
+                        (temp_min <= %s AND temp_max >= %s) OR  -- Start value falls in range
+                        (temp_min <= %s AND temp_max >= %s) OR  -- Target value falls in range
+                        (temp_min >= %s AND temp_max <= %s) OR  -- Range is completely within start-target
+                        (temp_min <= %s AND temp_max >= %s)     -- Range completely contains start-target
+                    )
+                    ORDER BY temp_min
+                ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+                configs = c.fetchall()
         else:  # Humidity
             # Get humidity slope configurations that overlap with the START and TARGET value range
-            c.execute('''
-                SELECT humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
-                       fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
-                FROM humidity_slope_configurations 
-                WHERE (humidity_min <= %s AND humidity_max >= %s) OR  -- Start value falls in range
-                      (humidity_min <= %s AND humidity_max >= %s) OR  -- Target value falls in range
-                      (humidity_min >= %s AND humidity_max <= %s) OR  -- Range is completely within start-target
-                      (humidity_min <= %s AND humidity_max >= %s)     -- Range completely contains start-target
-                ORDER BY humidity_min
-            ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
-        
-        configs = c.fetchall()
-        conn.close()
+            # If room_id is provided, prioritize room-specific configurations, then fall back to general ones
+            if room_id:
+                # First try to find room-specific configurations
+                c.execute('''
+                    SELECT humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+                           fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
+                    FROM humidity_slope_configurations 
+                    WHERE room_id = %s AND (
+                        (humidity_min <= %s AND humidity_max >= %s) OR  -- Start value falls in range
+                        (humidity_min <= %s AND humidity_max >= %s) OR  -- Target value falls in range
+                        (humidity_min >= %s AND humidity_max <= %s) OR  -- Range is completely within start-target
+                        (humidity_min <= %s AND humidity_max >= %s)     -- Range completely contains start-target
+                    )
+                    ORDER BY humidity_min
+                ''', (room_id, start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+                
+                configs = c.fetchall()
+                
+                # If no room-specific configs found, fall back to general configurations
+                if not configs:
+                    c.execute('''
+                        SELECT humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+                               fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
+                        FROM humidity_slope_configurations 
+                        WHERE room_id IS NULL AND (
+                            (humidity_min <= %s AND humidity_max >= %s) OR  -- Start value falls in range
+                            (humidity_min <= %s AND humidity_max >= %s) OR  -- Target value falls in range
+                            (humidity_min >= %s AND humidity_max <= %s) OR  -- Range is completely within start-target
+                            (humidity_min <= %s AND humidity_max >= %s)     -- Range completely contains start-target
+                        )
+                        ORDER BY humidity_min
+                    ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+                    configs = c.fetchall()
+            else:
+                # Use general configurations (room_id is NULL)
+                c.execute('''
+                    SELECT humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+                           fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope 
+                    FROM humidity_slope_configurations 
+                    WHERE room_id IS NULL AND (
+                        (humidity_min <= %s AND humidity_max >= %s) OR  -- Start value falls in range
+                        (humidity_min <= %s AND humidity_max >= %s) OR  -- Target value falls in range
+                        (humidity_min >= %s AND humidity_max <= %s) OR  -- Range is completely within start-target
+                        (humidity_min <= %s AND humidity_max >= %s)     -- Range completely contains start-target
+                    )
+                    ORDER BY humidity_min
+                ''', (start_value, start_value, target_value, target_value, start_value, target_value, start_value, target_value))
+                configs = c.fetchall()
         
         if not configs:
             return None, f"No slope configuration found for {code_type.lower()} range from {start_value} to {target_value}"
@@ -1186,7 +1263,8 @@ def update_diagnostic_params(code_id):
                 start_value, target_value, 
                 weather_data['temperature'], 
                 weather_data['humidity'], 
-                code_type
+                code_type,
+                room_id
             )
             
             if slope_error:
@@ -1264,14 +1342,15 @@ def calculate_time_from_weather(code_id):
         conn = psycopg2.connect(**DB_CONFIG)
         c = conn.cursor()
         
-        # Get diagnostic code type
-        c.execute('SELECT type FROM diagnostic_codes WHERE id = %s', (code_id,))
+        # Get diagnostic code type and room_id
+        c.execute('SELECT type, room_id FROM diagnostic_codes WHERE id = %s', (code_id,))
         code_result = c.fetchone()
         if not code_result:
             conn.close()
             return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
         
         code_type = code_result[0]
+        room_id = code_result[1]
         conn.close()
         
         # Get current weather
@@ -1284,7 +1363,8 @@ def calculate_time_from_weather(code_id):
             start_value, target_value, 
             weather_data['temperature'], 
             weather_data['humidity'], 
-            code_type
+            code_type,
+            room_id
         )
         
         if slope_error:
@@ -1795,13 +1875,14 @@ def configurations():
     conn = psycopg2.connect(**DB_CONFIG)
     c = conn.cursor()
     
-    # Fetch temperature configurations
+    # Fetch temperature configurations with room information
     c.execute('''
-        SELECT id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
-               fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, 
-               created_at, updated_at
-        FROM slope_configurations
-        ORDER BY temp_min ASC
+        SELECT sc.id, sc.temp_min, sc.temp_max, sc.summer_positive_slope, sc.summer_negative_slope, 
+               sc.fall_positive_slope, sc.fall_negative_slope, sc.winter_positive_slope, sc.winter_negative_slope, 
+               sc.created_at, sc.updated_at, sc.room_id, r.name as room_name
+        FROM slope_configurations sc
+        LEFT JOIN rooms r ON sc.room_id = r.id
+        ORDER BY r.name NULLS FIRST, sc.temp_min ASC
     ''')
     temp_configurations = []
     for row in c.fetchall():
@@ -1816,16 +1897,19 @@ def configurations():
             'winter_positive_slope': row[7],
             'winter_negative_slope': row[8],
             'created_at': row[9],
-            'updated_at': row[10]
+            'updated_at': row[10],
+            'room_id': row[11],
+            'room_name': row[12] if row[12] else 'General'
         })
     
-    # Fetch humidity configurations
+    # Fetch humidity configurations with room information
     c.execute('''
-        SELECT id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
-               fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, 
-               created_at, updated_at
-        FROM humidity_slope_configurations
-        ORDER BY humidity_min ASC
+        SELECT hsc.id, hsc.humidity_min, hsc.humidity_max, hsc.summer_positive_slope, hsc.summer_negative_slope, 
+               hsc.fall_positive_slope, hsc.fall_negative_slope, hsc.winter_positive_slope, hsc.winter_negative_slope, 
+               hsc.created_at, hsc.updated_at, hsc.room_id, r.name as room_name
+        FROM humidity_slope_configurations hsc
+        LEFT JOIN rooms r ON hsc.room_id = r.id
+        ORDER BY r.name NULLS FIRST, hsc.humidity_min ASC
     ''')
     humidity_configurations = []
     for row in c.fetchall():
@@ -1840,37 +1924,21 @@ def configurations():
             'winter_positive_slope': row[7],
             'winter_negative_slope': row[8],
             'created_at': row[9],
-            'updated_at': row[10]
+            'updated_at': row[10],
+            'room_id': row[11],
+            'room_name': row[12] if row[12] else 'General'
         })
     
-    # Fetch season temperature ranges
-    c.execute('''
-        SELECT id, season, temp_min, temp_max, created_at, updated_at
-        FROM season_temperature_ranges
-        ORDER BY 
-            CASE season 
-                WHEN 'Summer' THEN 1 
-                WHEN 'Fall' THEN 2 
-                WHEN 'Winter' THEN 3 
-                ELSE 4 
-            END
-    ''')
-    season_ranges = []
-    for row in c.fetchall():
-        season_ranges.append({
-            'id': row[0],
-            'season': row[1],
-            'temp_min': row[2],
-            'temp_max': row[3],
-            'created_at': row[4],
-            'updated_at': row[5]
-        })
+    # Fetch all rooms for dropdowns
+    c.execute('SELECT id, name FROM rooms ORDER BY name')
+    rooms = c.fetchall()
     
     conn.close()
+    
     return render_template('configurations.html', 
-                         temp_configurations=temp_configurations, 
+                         temp_configurations=temp_configurations,
                          humidity_configurations=humidity_configurations,
-                         season_ranges=season_ranges)
+                         rooms=rooms)
 
 @app.route('/add_slope_configuration', methods=['GET', 'POST'])
 @login_required
@@ -1885,6 +1953,8 @@ def add_slope_configuration():
             fall_negative_slope = float(request.form['fall_negative_slope'])
             winter_positive_slope = float(request.form['winter_positive_slope'])
             winter_negative_slope = float(request.form['winter_negative_slope'])
+            room_id = request.form.get('room_id')
+            room_id = int(room_id) if room_id and room_id != '' else None
             
             if temp_min >= temp_max:
                 flash('Minimum temperature must be less than maximum temperature', 'error')
@@ -1893,24 +1963,36 @@ def add_slope_configuration():
             conn = psycopg2.connect(**DB_CONFIG)
             c = conn.cursor()
             
-            # Check for overlapping temperature ranges
-            c.execute('''
-                SELECT id FROM slope_configurations 
-                WHERE (temp_min <= %s AND temp_max >= %s) 
-                   OR (temp_min <= %s AND temp_max >= %s)
-                   OR (temp_min >= %s AND temp_max <= %s)
-            ''', (temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
+            # Check for overlapping temperature ranges (only within the same room or general)
+            if room_id:
+                c.execute('''
+                    SELECT id FROM slope_configurations 
+                    WHERE room_id = %s AND (
+                        (temp_min <= %s AND temp_max >= %s) 
+                       OR (temp_min <= %s AND temp_max >= %s)
+                       OR (temp_min >= %s AND temp_max <= %s)
+                    )
+                ''', (room_id, temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
+            else:
+                c.execute('''
+                    SELECT id FROM slope_configurations 
+                    WHERE room_id IS NULL AND (
+                        (temp_min <= %s AND temp_max >= %s) 
+                       OR (temp_min <= %s AND temp_max >= %s)
+                       OR (temp_min >= %s AND temp_max <= %s)
+                    )
+                ''', (temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
             
             if c.fetchone():
-                flash('Temperature range overlaps with existing configuration', 'error')
+                flash('Temperature range overlaps with existing configuration for this room', 'error')
                 conn.close()
                 return redirect(url_for('configurations'))
             
             c.execute('''
-                INSERT INTO slope_configurations (temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
+                INSERT INTO slope_configurations (room_id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, 
                                                 fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope))
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (room_id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope))
             
             conn.commit()
             conn.close()
@@ -1924,7 +2006,14 @@ def add_slope_configuration():
             flash(f'Error adding slope configuration: {str(e)}', 'error')
             return redirect(url_for('configurations'))
     
-    return render_template('add_slope_configuration.html')
+    # GET request - fetch rooms for dropdown
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    c.execute('SELECT id, name FROM rooms ORDER BY name')
+    rooms = c.fetchall()
+    conn.close()
+    
+    return render_template('add_slope_configuration.html', rooms=rooms)
 
 @app.route('/add_humidity_slope_configuration', methods=['GET', 'POST'])
 @login_required
@@ -1996,33 +2085,45 @@ def edit_slope_configuration(config_id):
             fall_negative_slope = float(request.form['fall_negative_slope'])
             winter_positive_slope = float(request.form['winter_positive_slope'])
             winter_negative_slope = float(request.form['winter_negative_slope'])
+            room_id = request.form.get('room_id')
+            room_id = int(room_id) if room_id and room_id != '' else None
             
             if temp_min >= temp_max:
                 flash('Minimum temperature must be less than maximum temperature', 'error')
                 return redirect(url_for('configurations'))
             
-            # Check for overlapping temperature ranges (excluding current record)
-            c.execute('''
-                SELECT id FROM slope_configurations 
-                WHERE id != %s AND (
-                    (temp_min <= %s AND temp_max >= %s) 
-                    OR (temp_min <= %s AND temp_max >= %s)
-                    OR (temp_min >= %s AND temp_max <= %s)
-                )
-            ''', (config_id, temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
+            # Check for overlapping temperature ranges (excluding current record, only within the same room or general)
+            if room_id:
+                c.execute('''
+                    SELECT id FROM slope_configurations 
+                    WHERE id != %s AND room_id = %s AND (
+                        (temp_min <= %s AND temp_max >= %s) 
+                        OR (temp_min <= %s AND temp_max >= %s)
+                        OR (temp_min >= %s AND temp_max <= %s)
+                    )
+                ''', (config_id, room_id, temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
+            else:
+                c.execute('''
+                    SELECT id FROM slope_configurations 
+                    WHERE id != %s AND room_id IS NULL AND (
+                        (temp_min <= %s AND temp_max >= %s) 
+                        OR (temp_min <= %s AND temp_max >= %s)
+                        OR (temp_min >= %s AND temp_max <= %s)
+                    )
+                ''', (config_id, temp_min, temp_min, temp_max, temp_max, temp_min, temp_max))
             
             if c.fetchone():
-                flash('Temperature range overlaps with existing configuration', 'error')
+                flash('Temperature range overlaps with existing configuration for this room', 'error')
                 conn.close()
                 return redirect(url_for('configurations'))
             
             c.execute('''
                 UPDATE slope_configurations 
-                SET temp_min = %s, temp_max = %s, summer_positive_slope = %s, summer_negative_slope = %s, 
+                SET room_id = %s, temp_min = %s, temp_max = %s, summer_positive_slope = %s, summer_negative_slope = %s, 
                     fall_positive_slope = %s, fall_negative_slope = %s, winter_positive_slope = %s, winter_negative_slope = %s, 
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-            ''', (temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, config_id))
+            ''', (room_id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, config_id))
             
             conn.commit()
             conn.close()
@@ -2036,9 +2137,14 @@ def edit_slope_configuration(config_id):
             flash(f'Error updating slope configuration: {str(e)}', 'error')
             return redirect(url_for('configurations'))
     
-    # GET request - fetch current configuration
-    c.execute('SELECT id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope FROM slope_configurations WHERE id = %s', (config_id,))
+    # GET request - fetch current configuration and rooms
+    c.execute('SELECT id, temp_min, temp_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, room_id FROM slope_configurations WHERE id = %s', (config_id,))
     config = c.fetchone()
+    
+    # Fetch all rooms for dropdown
+    c.execute('SELECT id, name FROM rooms ORDER BY name')
+    rooms = c.fetchall()
+    
     conn.close()
     
     if not config:
@@ -2054,8 +2160,9 @@ def edit_slope_configuration(config_id):
         'fall_positive_slope': config[5],
         'fall_negative_slope': config[6],
         'winter_positive_slope': config[7],
-        'winter_negative_slope': config[8]
-    })
+        'winter_negative_slope': config[8],
+        'room_id': config[9]
+    }, rooms=rooms)
 
 @app.route('/edit_humidity_slope_configuration/<int:config_id>', methods=['GET', 'POST'])
 @login_required
@@ -2411,6 +2518,60 @@ def delete_location(location_id):
         flash(f'Error deleting location: {str(e)}', 'error')
     
     return redirect(url_for('location_config'))
+
+@app.route('/debug/configurations')
+@login_required
+def debug_configurations():
+    """Debug route to check what configurations exist in the database"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Check if tables exist
+        c.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_name IN ('slope_configurations', 'humidity_slope_configurations', 'rooms')
+        """)
+        existing_tables = [row[0] for row in c.fetchall()]
+        
+        # Check table structures
+        table_info = {}
+        for table in existing_tables:
+            c.execute(f"""
+                SELECT column_name, data_type, is_nullable
+                FROM information_schema.columns 
+                WHERE table_name = '{table}'
+                ORDER BY ordinal_position
+            """)
+            table_info[table] = c.fetchall()
+        
+        # Check data counts
+        data_counts = {}
+        for table in existing_tables:
+            c.execute(f'SELECT COUNT(*) FROM {table}')
+            data_counts[table] = c.fetchone()[0]
+        
+        # Check actual data
+        actual_data = {}
+        for table in existing_tables:
+            if data_counts[table] > 0:
+                c.execute(f'SELECT * FROM {table} LIMIT 5')
+                actual_data[table] = c.fetchall()
+            else:
+                actual_data[table] = []
+        
+        conn.close()
+        
+        return jsonify({
+            'existing_tables': existing_tables,
+            'table_info': table_info,
+            'data_counts': data_counts,
+            'actual_data': actual_data
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True) 
