@@ -116,9 +116,14 @@
                             <td data-label="History">{{ code[4] }}</td>
                             <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
                             <td data-label="Graph">
-                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
-                                    <i class="fas fa-chart-line"></i> Graph
-                                </button>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
+                                        <i class="fas fa-chart-line"></i> Graph
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-success" onclick="downloadDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
+                                        <i class="fas fa-download"></i> Download
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -159,9 +164,14 @@
                             <td data-label="History">{{ code[4] }}</td>
                             <td data-label="Last Read">{{ code[8] if code[8] else 'Never' }}</td>
                             <td data-label="Graph">
-                                <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
-                                    <i class="fas fa-chart-line"></i> Graph
-                                </button>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
+                                        <i class="fas fa-chart-line"></i> Graph
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-success" onclick="downloadDiagnosticGraph('{{ code[0] }}', '{{ code[1] }}')">
+                                        <i class="fas fa-download"></i> Download
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -330,9 +340,14 @@ function updateDiagnostics() {
                                 <td data-label="History">${code[4]}</td>
                                 <td data-label="Last Read">${code[8] || 'Never'}</td>
                                 <td data-label="Graph">
-                                    <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
-                                        <i class="fas fa-chart-line"></i> Graph
-                                    </button>
+                                    <div class="d-flex gap-1">
+                                        <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-chart-line"></i> Graph
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-success" onclick="downloadDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-download"></i> Download
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         `;
@@ -399,9 +414,14 @@ function updateDiagnostics() {
                                 <td data-label="History">${code[4]}</td>
                                 <td data-label="Last Read">${code[8] || 'Never'}</td>
                                 <td data-label="Graph">
-                                    <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
-                                        <i class="fas fa-chart-line"></i> Graph
-                                    </button>
+                                    <div class="d-flex gap-1">
+                                        <button class="btn btn-sm btn-outline-info" onclick="showDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-chart-line"></i> Graph
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-success" onclick="downloadDiagnosticGraph('${code[0]}', '${code[1].replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-download"></i> Download
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         `;
@@ -588,6 +608,53 @@ function downloadRoomGraphs(roomId, roomName) {
     .catch(error => {
         console.error('Download error:', error);
         alert('Error downloading graphs. Please try again.');
+    })
+    .finally(() => {
+        // Restore button state
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+// Download individual diagnostic graph functionality
+function downloadDiagnosticGraph(code, description) {
+    // Show loading state
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+    
+    // Make API call to download individual graph
+    fetch(`/api/download_diagnostic_graph/${code}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.blob();
+        } else {
+            throw new Error('Download failed');
+        }
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${code}_${description.replace(/[^a-zA-Z0-9]/g, '_')}_graph_${new Date().toISOString().split('T')[0]}.html`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Show success message
+        alert(`Graph for ${code} downloaded successfully!`);
+    })
+    .catch(error => {
+        console.error('Download error:', error);
+        alert('Error downloading graph. Please try again.');
     })
     .finally(() => {
         // Restore button state
