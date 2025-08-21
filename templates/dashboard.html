@@ -69,11 +69,19 @@
         <div class="card shadow p-4 mb-4" data-room-id="{{ chamber_data.room_id }}">
             <h4 style="color: #003366;">
                 <i class="fas fa-building me-2"></i>{{ chamber_name }}
-                {% if chamber_data.room_id %}
-                <a href="{{ url_for('rooms') }}" class="btn btn-sm btn-outline-secondary ms-2">
-                    <i class="fas fa-cog"></i> Manage
-                </a>
-                {% endif %}
+                <div class="d-flex gap-2 ms-2">
+                    {% if chamber_data.room_id %}
+                    <a href="{{ url_for('rooms') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-cog"></i> Manage
+                    </a>
+                    {% endif %}
+                    <button class="btn btn-sm btn-success" onclick="downloadRoomData('{{ chamber_data.room_id or 'unassigned' }}', '{{ chamber_name }}')">
+                        <i class="fas fa-download"></i> Download Data
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="downloadRoomGraphs('{{ chamber_data.room_id or 'unassigned' }}', '{{ chamber_name }}')">
+                        <i class="fas fa-chart-line"></i> Download Graphs
+                    </button>
+                </div>
             </h4>
             
             <!-- Temperature Diagnostics for this chamber -->
@@ -256,7 +264,15 @@ function updateDiagnostics() {
                 let cardContent = `
                     <h4 style="color: #003366;">
                         <i class="fas fa-building me-2"></i>${chamberName}
-                        ${chamberData.room_id ? `<a href="/rooms" class="btn btn-sm btn-outline-secondary ms-2"><i class="fas fa-cog"></i> Manage</a>` : ''}
+                        <div class="d-flex gap-2 ms-2">
+                            ${chamberData.room_id ? `<a href="/rooms" class="btn btn-sm btn-outline-secondary"><i class="fas fa-cog"></i> Manage</a>` : ''}
+                            <button class="btn btn-sm btn-success" onclick="downloadRoomData('${chamberData.room_id || 'unassigned'}', '${chamberName.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-download"></i> Download Data
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="downloadRoomGraphs('${chamberData.room_id || 'unassigned'}', '${chamberName.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-chart-line"></i> Download Graphs
+                            </button>
+                        </div>
                     </h4>
                 `;
                 
@@ -485,6 +501,100 @@ document.getElementById('resetHistoryBtn').addEventListener('click', function() 
 
 // Update every second
 setInterval(updateDiagnostics, 1000);
+
+// Download room data functionality
+function downloadRoomData(roomId, roomName) {
+    // Show loading state
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+    
+    // Make API call to download data
+    fetch(`/api/download_room_data/${roomId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.blob();
+        } else {
+            throw new Error('Download failed');
+        }
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${roomName}_data_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Show success message
+        alert(`Data for ${roomName} downloaded successfully!`);
+    })
+    .catch(error => {
+        console.error('Download error:', error);
+        alert('Error downloading data. Please try again.');
+    })
+    .finally(() => {
+        // Restore button state
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+// Download room graphs functionality
+function downloadRoomGraphs(roomId, roomName) {
+    // Show loading state
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+    
+    // Make API call to download graphs
+    fetch(`/api/download_room_graphs/${roomId}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.blob();
+        } else {
+            throw new Error('Download failed');
+        }
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${roomName}_graphs_${new Date().toISOString().split('T')[0]}.html`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Show success message
+        alert(`Graphs for ${roomName} downloaded successfully!`);
+    })
+    .catch(error => {
+        console.error('Download error:', error);
+        alert('Error downloading graphs. Please try again.');
+    })
+    .finally(() => {
+        // Restore button state
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
 
 // Global variables for auto-updating graph
 let currentGraphCode = null;

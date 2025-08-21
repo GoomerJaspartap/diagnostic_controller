@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 import psycopg2
 import os
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,6 +10,8 @@ from datetime import datetime
 from datetime import timedelta
 import requests
 import json
+import csv
+import io
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -100,6 +102,7 @@ def init_db():
             mqtt_broker VARCHAR(255),
             mqtt_port INTEGER,
             mqtt_topic VARCHAR(255),
+            mqtt_json_field VARCHAR(255),
             mqtt_username VARCHAR(255),
             mqtt_password VARCHAR(255),
             mqtt_qos INTEGER DEFAULT 0,
@@ -783,6 +786,7 @@ def add_diagnostic_code():
         mqtt_broker = request.form.get('mqtt_broker')
         mqtt_port = request.form.get('mqtt_port') or None
         mqtt_topic = request.form.get('mqtt_topic')
+        mqtt_json_field = request.form.get('mqtt_json_field')
         mqtt_username = request.form.get('mqtt_username')
         mqtt_password = request.form.get('mqtt_password')
         mqtt_qos = request.form.get('mqtt_qos') or 0
@@ -798,14 +802,14 @@ def add_diagnostic_code():
                     data_source_type, modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
                     modbus_register_address, modbus_data_type, modbus_byte_order,
                     modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-                    mqtt_broker, mqtt_port, mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
+                    mqtt_broker, mqtt_port, mqtt_topic, mqtt_json_field, mqtt_username, mqtt_password, mqtt_qos,
                     enabled)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
                     (code, description, type, 'No Status', '', 0, room_id,
                     data_source_type, modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
                     modbus_register_address, modbus_data_type, modbus_byte_order,
                     modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-                    mqtt_broker, mqtt_port, mqtt_topic, mqtt_username, mqtt_password, mqtt_qos,
+                    mqtt_broker, mqtt_port, mqtt_topic, mqtt_json_field, mqtt_username, mqtt_password, mqtt_qos,
                     0))
                 conn.commit()
                 flash('Diagnostic code added successfully!', 'success')
@@ -865,6 +869,7 @@ def edit_diagnostic_code(code_id):
         mqtt_broker = request.form.get('mqtt_broker')
         mqtt_port = request.form.get('mqtt_port') or None
         mqtt_topic = request.form.get('mqtt_topic')
+        mqtt_json_field = request.form.get('mqtt_json_field')
         mqtt_username = request.form.get('mqtt_username')
         mqtt_password = request.form.get('mqtt_password')
         mqtt_qos = request.form.get('mqtt_qos') or 0
@@ -885,14 +890,14 @@ def edit_diagnostic_code(code_id):
                             modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
                             modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
                             modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
-                            mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
+                            mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_json_field=%s, mqtt_username=%s,
                             mqtt_password=%s, mqtt_qos=%s, enabled=%s, enabled_at=%s
                             WHERE id=%s''',
                             (code, description, type, data_source_type, room_id,
                             modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
                             modbus_register_address, modbus_data_type, modbus_byte_order,
                             modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-                            mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
+                            mqtt_broker, mqtt_port, mqtt_topic, mqtt_json_field, mqtt_username,
                             mqtt_password, mqtt_qos, enabled, enabled_at, code_id))
                     else:
                         # Update without changing enabled_at
@@ -901,14 +906,14 @@ def edit_diagnostic_code(code_id):
                             modbus_ip=%s, modbus_port=%s, modbus_unit_id=%s, modbus_register_type=%s,
                             modbus_register_address=%s, modbus_data_type=%s, modbus_byte_order=%s,
                             modbus_scaling=%s, modbus_units=%s, modbus_offset=%s, modbus_function_code=%s,
-                            mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_username=%s,
+                            mqtt_broker=%s, mqtt_port=%s, mqtt_topic=%s, mqtt_json_field=%s, mqtt_username=%s,
                             mqtt_password=%s, mqtt_qos=%s, enabled=%s
                             WHERE id=%s''',
                             (code, description, type, data_source_type, room_id,
                             modbus_ip, modbus_port, modbus_unit_id, modbus_register_type,
                             modbus_register_address, modbus_data_type, modbus_byte_order,
                             modbus_scaling, modbus_units, modbus_offset, modbus_function_code,
-                            mqtt_broker, mqtt_port, mqtt_topic, mqtt_username,
+                            mqtt_broker, mqtt_port, mqtt_topic, mqtt_json_field, mqtt_username,
                             mqtt_password, mqtt_qos, enabled, code_id))
                     conn.commit()
                     flash('Diagnostic code updated successfully!', 'success')
@@ -1241,14 +1246,15 @@ def update_diagnostic_params(code_id):
         conn = psycopg2.connect(**DB_CONFIG)
         c = conn.cursor()
         
-        # Get diagnostic code type
-        c.execute('SELECT type FROM diagnostic_codes WHERE id = %s', (code_id,))
+        # Get diagnostic code type and room_id
+        c.execute('SELECT type, room_id FROM diagnostic_codes WHERE id = %s', (code_id,))
         code_result = c.fetchone()
         if not code_result:
             conn.close()
             return jsonify({'success': False, 'error': 'Diagnostic code not found'}), 404
         
         code_type = code_result[0]
+        room_id = code_result[1]
         
         # If weather calculation is requested, calculate time_to_achieve
         if use_weather_calculation:
@@ -1741,6 +1747,575 @@ def api_data_log():
     conn.close()
     return jsonify({'logs': logs})
 
+@app.route('/api/download_room_data/<room_id>')
+@login_required
+def download_room_data(room_id):
+    """Download all data logs for a specific room with pass/fail status"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Get room name
+        room_name = "Unassigned"
+        if room_id != 'unassigned':
+            c.execute('SELECT name FROM rooms WHERE id = %s', (room_id,))
+            room_result = c.fetchone()
+            if room_result:
+                room_name = room_result[0]
+        
+        # Get all active diagnostic codes for this room
+        if room_id == 'unassigned':
+            c.execute('''
+                SELECT code, description, type, state, last_failure, history_count, 
+                       start_value, target_value, threshold, enabled_at, current_value, fault_type
+                FROM diagnostic_codes 
+                WHERE enabled = 1 AND room_id IS NULL
+                ORDER BY type, code
+            ''')
+        else:
+            c.execute('''
+                SELECT code, description, type, state, last_failure, history_count, 
+                       start_value, target_value, threshold, enabled_at, current_value, fault_type
+                FROM diagnostic_codes 
+                WHERE enabled = 1 AND room_id = %s
+                ORDER BY type, code
+            ''', (room_id,))
+        
+        diagnostic_codes = c.fetchall()
+        
+        if not diagnostic_codes:
+            return jsonify({'error': 'No diagnostic codes found for this room'}), 404
+        
+        # Find the earliest enabled_at time among all codes (start time)
+        earliest_enabled = None
+        for code in diagnostic_codes:
+            if code[9] and (earliest_enabled is None or code[9] < earliest_enabled):
+                earliest_enabled = code[9]
+        
+        # Get all data logs for these codes from the start time
+        csv_data = []
+        csv_data.append(['Room', 'Code', 'Description', 'Type', 'State', 'Pass/Fail', 'Value', 'Data Source', 'Timestamp', 'Start Value', 'Target Value', 'Threshold', 'Fault Type'])
+        
+        for code in diagnostic_codes:
+            code_name = code[0]
+            description = code[1]
+            code_type = code[2]
+            state = code[3]
+            last_failure = code[4]
+            history_count = code[5]
+            start_value = code[6]
+            target_value = code[7]
+            threshold = code[8]
+            enabled_at = code[9]
+            current_value = code[10]
+            fault_type = code[11]
+            
+            # Get ALL data for this code by combining data_logs and logs tables
+            # First, get all data points from data_logs
+            if enabled_at:
+                c.execute('''
+                    SELECT value, event_time 
+                    FROM data_logs 
+                    WHERE code = %s AND event_time >= %s
+                    ORDER BY event_time ASC
+                ''', (code_name, enabled_at))
+            else:
+                c.execute('''
+                    SELECT value, event_time 
+                    FROM data_logs 
+                    WHERE code = %s
+                    ORDER BY event_time ASC
+                ''', (code_name,))
+            
+            all_data_points = c.fetchall()
+            
+            # Get state changes from logs table
+            if enabled_at:
+                c.execute('''
+                    SELECT state, event_time 
+                    FROM logs 
+                    WHERE code = %s AND event_time >= %s
+                    ORDER BY event_time ASC
+                ''', (code_name, enabled_at))
+            else:
+                c.execute('''
+                    SELECT state, event_time 
+                    FROM logs 
+                    WHERE code = %s
+                    ORDER BY event_time ASC
+                ''', (code_name,))
+            
+            state_changes = c.fetchall()
+            
+            if all_data_points:
+                for data_point in all_data_points:
+                    value = data_point[0]
+                    event_time = data_point[1]
+                    
+                    # Convert to EST timezone
+                    if event_time:
+                        try:
+                            est_time = event_time - timedelta(hours=4)
+                            formatted_time = est_time.strftime('%Y-%m-%d %H:%M:%S')
+                        except:
+                            formatted_time = str(event_time)
+                    else:
+                        formatted_time = ''
+                    
+                    # Find the exact matching entry in logs table by timestamp and value
+                    # First try exact timestamp match
+                    exact_match = None
+                    for state_change in state_changes:
+                        if state_change[1] == event_time:
+                            exact_match = state_change[0]
+                            break
+                    
+                    # If no exact timestamp match, try to find the closest match within a small time window
+                    if exact_match is None:
+                        closest_state = state  # Default to current state
+                        min_time_diff = float('inf')
+                        
+                        for state_change in state_changes:
+                            time_diff = abs((state_change[1] - event_time).total_seconds())
+                            # Only consider matches within 5 seconds
+                            if time_diff <= 5 and time_diff < min_time_diff:
+                                min_time_diff = time_diff
+                                closest_state = state_change[0]
+                        
+                        current_state = closest_state
+                    else:
+                        current_state = exact_match
+                    
+                    # Determine pass/fail status
+                    if current_state == 'Pass':
+                        pass_fail = 'Pass'
+                    elif current_state == 'Fail':
+                        pass_fail = 'Fail'
+                    else:
+                        pass_fail = 'No Status'
+                    
+                    csv_data.append([
+                        room_name,
+                        code_name,
+                        description,
+                        code_type,
+                        state,
+                        pass_fail,
+                        value if value is not None else '',
+                        'data_logs',  # Data source is data_logs table
+                        formatted_time,
+                        start_value if start_value is not None else '',
+                        target_value if target_value is not None else '',
+                        threshold if threshold is not None else '',
+                        fault_type or ''
+                    ])
+            else:
+                # Add a row for the code even if no data logs exist
+                csv_data.append([
+                    room_name,
+                    code_name,
+                    description,
+                    code_type,
+                    state,
+                    'No Status',
+                    '',
+                    '',
+                    '',
+                    start_value if start_value is not None else '',
+                    target_value if target_value is not None else '',
+                    threshold if threshold is not None else '',
+                    fault_type or ''
+                ])
+        
+        conn.close()
+        
+        # Generate CSV content
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerows(csv_data)
+        
+        # Create response with CSV data
+        output.seek(0)
+        
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={room_name}_data_{datetime.now().strftime("%Y-%m-%d")}.csv'}
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download_room_graphs/<room_id>')
+@login_required
+def download_room_graphs(room_id):
+    """Download interactive HTML graphs for all diagnostic codes in a room"""
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        # Get room name
+        room_name = "Unassigned"
+        if room_id != 'unassigned':
+            c.execute('SELECT name FROM rooms WHERE id = %s', (room_id,))
+            room_result = c.fetchone()
+            if room_result:
+                room_name = room_result[0]
+        
+        # Get all active diagnostic codes for this room
+        if room_id == 'unassigned':
+            c.execute('''
+                SELECT code, description, type, state, enabled_at, start_value, target_value, threshold
+                FROM diagnostic_codes 
+                WHERE enabled = 1 AND room_id IS NULL
+                ORDER BY type, code
+            ''')
+        else:
+            c.execute('''
+                SELECT code, description, type, state, enabled_at, start_value, target_value, threshold
+                FROM diagnostic_codes 
+                WHERE enabled = 1 AND room_id = %s
+                ORDER BY type, code
+            ''', (room_id,))
+        
+        diagnostic_codes = c.fetchall()
+        
+        if not diagnostic_codes:
+            return jsonify({'error': 'No diagnostic codes found for this room'}), 404
+        
+        # Find the earliest enabled_at time among all codes (start time)
+        earliest_enabled = None
+        for code in diagnostic_codes:
+            if code[4] and (earliest_enabled is None or code[4] < earliest_enabled):
+                earliest_enabled = code[4]
+        
+        # Get data logs for all codes from the start time
+        all_data = {}
+        for code in diagnostic_codes:
+            code_name = code[0]
+            description = code[1]
+            code_type = code[2]
+            state = code[3]
+            enabled_at = code[4]
+            start_value = code[5]
+            target_value = code[6]
+            threshold = code[7]
+            
+            # Get ALL data for this code by combining data_logs and logs tables
+            # First, get all data points from data_logs
+            if enabled_at:
+                c.execute('''
+                    SELECT value, event_time 
+                    FROM data_logs 
+                    WHERE code = %s AND event_time >= %s
+                    ORDER BY event_time ASC
+                ''', (code_name, enabled_at))
+            else:
+                c.execute('''
+                    SELECT value, event_time 
+                    FROM data_logs 
+                    WHERE code = %s
+                    ORDER BY event_time ASC
+                ''', (code_name,))
+            
+            all_data_points = c.fetchall()
+            
+            # Get state changes from logs table
+            if enabled_at:
+                c.execute('''
+                    SELECT state, event_time 
+                    FROM logs 
+                    WHERE code = %s AND event_time >= %s
+                    ORDER BY event_time ASC
+                ''', (code_name, enabled_at))
+            else:
+                c.execute('''
+                    SELECT state, event_time 
+                    FROM logs 
+                    WHERE code = %s
+                    ORDER BY event_time ASC
+                ''', (code_name,))
+            
+            state_changes = c.fetchall()
+            
+            # Format data for plotting
+            times = []
+            values = []
+            colors = []
+            
+            for data_point in all_data_points:
+                value = data_point[0]
+                event_time = data_point[1]
+                
+                if value is not None and event_time:
+                    # Convert to EST timezone
+                    try:
+                        est_time = event_time - timedelta(hours=4)
+                        formatted_time = est_time.strftime('%Y-%m-%d %H:%M:%S')
+                    except:
+                        formatted_time = str(event_time)
+                    
+                    times.append(formatted_time)
+                    values.append(value)
+                    
+                    # Find the exact matching entry in logs table by timestamp and value
+                    # First try exact timestamp match
+                    exact_match = None
+                    for state_change in state_changes:
+                        if state_change[1] == event_time:
+                            exact_match = state_change[0]
+                            break
+                    
+                    # If no exact timestamp match, try to find the closest match within a small time window
+                    if exact_match is None:
+                        closest_state = state  # Default to current state
+                        min_time_diff = float('inf')
+                        
+                        for state_change in state_changes:
+                            time_diff = abs((state_change[1] - event_time).total_seconds())
+                            # Only consider matches within 5 seconds
+                            if time_diff <= 5 and time_diff < min_time_diff:
+                                min_time_diff = time_diff
+                                closest_state = state_change[0]
+                        
+                        current_state = closest_state
+                    else:
+                        current_state = exact_match
+                    
+                    # Use the determined state for color coding
+                    if current_state == 'Pass':
+                        colors.append('green')
+                    elif current_state == 'Fail':
+                        colors.append('red')
+                    else:
+                        colors.append('yellow')
+            
+            all_data[code_name] = {
+                'description': description,
+                'type': code_type,
+                'state': state,
+                'times': times,
+                'values': values,
+                'colors': colors
+            }
+        
+        conn.close()
+        
+        # Generate HTML content with Plotly graphs
+        html_content = generate_room_graphs_html(room_name, all_data)
+        
+        # Create response with HTML data
+        return Response(
+            html_content,
+            mimetype='text/html',
+            headers={'Content-Disposition': f'attachment; filename={room_name}_graphs_{datetime.now().strftime("%Y-%m-%d")}.html'}
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def generate_room_graphs_html(room_name, all_data):
+    """Generate HTML content with Plotly graphs for all diagnostic codes in a room"""
+    
+    # Create traces for each diagnostic code
+    traces_html = ""
+    legend_html = ""
+    
+    for code_name, data in all_data.items():
+        if data['times'] and data['values']:  # Only add traces if there's data
+            # Create unique color for each code
+            base_color = data['colors'][0] if data['colors'] else 'blue'
+            
+            traces_html += f"""
+            {{
+                x: {data['times']},
+                y: {data['values']},
+                mode: 'lines+markers',
+                name: '{code_name} - {data['description']}',
+                line: {{color: '{base_color}', width: 2}},
+                marker: {{
+                    color: {data['colors']},
+                    size: 8,
+                    symbol: 'circle'
+                }},
+                hovertemplate: '<b>{code_name}</b><br>' +
+                              'Value: %{{y}}<br>' +
+                              'Time: %{{x}}<br>' +
+                              'State: {data['state']}<br>' +
+                              'Type: {data['type']}<extra></extra>'
+            }},"""
+            
+            # Add to legend
+            legend_html += f"""
+            <div style="margin: 5px 0;">
+                <span style="display: inline-block; width: 20px; height: 20px; background-color: {base_color}; border-radius: 50%; margin-right: 10px;"></span>
+                <strong>{code_name}</strong> - {data['description']} ({data['type']}) - <span style="color: {base_color}; font-weight: bold;">{data['state']}</span>
+            </div>"""
+    
+    html_template = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{room_name} - Diagnostic Graphs</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #003366;
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .graph-container {{
+            margin-bottom: 40px;
+        }}
+        .legend {{
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #003366;
+        }}
+        .legend h3 {{
+            margin-top: 0;
+            color: #003366;
+        }}
+        .info {{
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }}
+        .info h3 {{
+            margin-top: 0;
+            color: #007bff;
+        }}
+        .download-info {{
+            background-color: #d4edda;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #28a745;
+        }}
+        .download-info h3 {{
+            margin-top: 0;
+            color: #28a745;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-chart-line"></i> {room_name} - Diagnostic Graphs</h1>
+        
+        <div class="download-info">
+            <h3><i class="fas fa-info-circle"></i> Download Information</h3>
+            <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p><strong>Room:</strong> {room_name}</p>
+            <p><strong>Total Diagnostic Codes:</strong> {len(all_data)}</p>
+        </div>
+        
+        <div class="info">
+            <h3><i class="fas fa-lightbulb"></i> How to Use This Graph</h3>
+            <ul>
+                <li><strong>Interactive:</strong> Zoom, pan, and hover over data points</li>
+                <li><strong>Color Coding:</strong> Green = Pass, Red = Fail, Yellow = No Status</li>
+                <li><strong>Legend:</strong> Click on legend items to show/hide traces</li>
+                <li><strong>Export:</strong> Use the camera icon to save as PNG</li>
+                <li><strong>Fullscreen:</strong> Double-click the graph for fullscreen view</li>
+            </ul>
+        </div>
+        
+        <div class="legend">
+            <h3><i class="fas fa-list"></i> Diagnostic Codes Legend</h3>
+            {legend_html}
+        </div>
+        
+        <div class="graph-container">
+            <div id="diagnosticGraph" style="width: 100%; height: 600px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Data for the graph
+        const traces = [{traces_html}];
+        
+        // Layout configuration
+        const layout = {{
+            title: {{
+                text: '{room_name} - All Diagnostic Codes',
+                font: {{size: 20, color: '#003366'}}
+            }},
+            xaxis: {{
+                title: 'Time',
+                showgrid: true,
+                gridcolor: '#e1e5e9',
+                zeroline: false
+            }},
+            yaxis: {{
+                title: 'Value',
+                showgrid: true,
+                gridcolor: '#e1e5e9',
+                zeroline: false
+            }},
+            legend: {{
+                orientation: 'h',
+                x: 0.5,
+                xanchor: 'center',
+                y: 1.02,
+                bgcolor: 'rgba(255,255,255,0.8)',
+                bordercolor: '#ccc',
+                borderwidth: 1
+            }},
+            margin: {{l: 60, r: 30, t: 80, b: 60}},
+            hovermode: 'closest',
+            dragmode: 'pan',
+            autosize: true,
+            plot_bgcolor: 'white',
+            paper_bgcolor: 'white'
+        }};
+        
+        // Configuration for the graph
+        const config = {{
+            responsive: true,
+            displayModeBar: true,
+            displaylogo: false,
+            modeBarButtonsToAdd: ['zoom2d', 'pan2d', 'resetScale2d', 'toImage', 'autoScale2d'],
+            toImageButtonOptions: {{
+                format: 'png',
+                filename: '{room_name}_diagnostic_graph',
+                height: 800,
+                width: 1200,
+                scale: 2
+            }}
+        }};
+        
+        // Create the graph
+        Plotly.newPlot('diagnosticGraph', traces, layout, config);
+        
+        // Add responsive behavior
+        window.addEventListener('resize', function() {{
+            Plotly.Plots.resize('diagnosticGraph');
+        }});
+    </script>
+</body>
+</html>"""
+    
+    return html_template
+
 @app.route('/api/diagnostic_graph/<code>')
 @login_required
 def diagnostic_graph(code):
@@ -1939,6 +2514,271 @@ def configurations():
                          temp_configurations=temp_configurations,
                          humidity_configurations=humidity_configurations,
                          rooms=rooms)
+
+@app.route('/export_slope_configurations_csv')
+@login_required
+def export_slope_configurations_csv():
+    """Export all slope configurations to CSV format"""
+    import csv
+    from io import StringIO
+    
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    
+    # Fetch temperature configurations
+    c.execute('''
+        SELECT r.name as room_name, sc.temp_min, sc.temp_max, sc.summer_positive_slope, sc.summer_negative_slope, 
+               sc.fall_positive_slope, sc.fall_negative_slope, sc.winter_positive_slope, sc.winter_negative_slope
+        FROM slope_configurations sc
+        LEFT JOIN rooms r ON sc.room_id = r.id
+        ORDER BY r.name NULLS FIRST, sc.temp_min ASC
+    ''')
+    temp_configs = c.fetchall()
+    
+    # Fetch humidity configurations
+    c.execute('''
+        SELECT r.name as room_name, hsc.humidity_min, hsc.humidity_max, hsc.summer_positive_slope, hsc.summer_negative_slope, 
+               hsc.fall_positive_slope, hsc.fall_negative_slope, hsc.winter_positive_slope, hsc.winter_negative_slope
+        FROM humidity_slope_configurations hsc
+        LEFT JOIN rooms r ON hsc.room_id = r.id
+        ORDER BY r.name NULLS FIRST, hsc.humidity_min ASC
+    ''')
+    humidity_configs = c.fetchall()
+    
+    conn.close()
+    
+    # Create CSV content
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write headers
+    writer.writerow(['Configuration Type', 'Room Name', 'Min Value', 'Max Value', 
+                     'Summer Positive Slope', 'Summer Negative Slope',
+                     'Fall Positive Slope', 'Fall Negative Slope',
+                     'Winter Positive Slope', 'Winter Negative Slope'])
+    
+    # Write temperature configurations
+    for row in temp_configs:
+        # row[0] = room_name, row[1] = temp_min, row[2] = temp_max, etc.
+        writer.writerow(['Temperature', row[0] or 'General', row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]])
+    
+    # Write humidity configurations
+    for row in humidity_configs:
+        # row[0] = room_name, row[1] = humidity_min, row[2] = humidity_max, etc.
+        writer.writerow(['Humidity', row[0] or 'General', row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]])
+    
+    output.seek(0)
+    
+    from flask import Response
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=slope_configurations.csv'}
+    )
+
+@app.route('/download_slope_configurations_template')
+@login_required
+def download_slope_configurations_template():
+    """Download a CSV template for slope configurations"""
+    import csv
+    from io import StringIO
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write headers
+    writer.writerow(['Configuration Type', 'Room Name', 'Min Value', 'Max Value', 
+                     'Summer Positive Slope', 'Summer Negative Slope',
+                     'Fall Positive Slope', 'Fall Negative Slope',
+                     'Winter Positive Slope', 'Winter Negative Slope'])
+    
+    # Write example rows
+    writer.writerow(['Temperature', 'Room A', '18.0', '25.0', '0.5', '-0.3', '0.4', '-0.2', '0.6', '-0.4'])
+    writer.writerow(['Temperature', 'Room B', '20.0', '28.0', '0.6', '-0.4', '0.5', '-0.3', '0.7', '-0.5'])
+    writer.writerow(['Humidity', 'General', '30.0', '70.0', '2.0', '-1.5', '1.8', '-1.3', '2.2', '-1.7'])
+    
+    output.seek(0)
+    
+    from flask import Response
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=slope_configurations_template.csv'}
+    )
+
+@app.route('/import_slope_configurations_csv', methods=['POST'])
+@login_required
+def import_slope_configurations_csv():
+    """Import slope configurations from CSV file"""
+    import csv
+    from io import StringIO
+    
+    if 'csv_file' not in request.files:
+        flash('No file selected', 'error')
+        return redirect(url_for('configurations'))
+    
+    file = request.files['csv_file']
+    if file.filename == '':
+        flash('No file selected', 'error')
+        return redirect(url_for('configurations'))
+    
+    if not file.filename.endswith('.csv'):
+        flash('Please select a CSV file', 'error')
+        return redirect(url_for('configurations'))
+    
+    try:
+        # Read CSV content
+        content = file.read().decode('utf-8')
+        csv_reader = csv.reader(StringIO(content))
+        
+        # Skip header row
+        next(csv_reader)
+        
+        conn = psycopg2.connect(**DB_CONFIG)
+        c = conn.cursor()
+        
+        success_count = 0
+        error_count = 0
+        errors = []
+        
+        for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 to account for header
+            try:
+                if len(row) < 10:
+                    errors.append(f"Row {row_num}: Insufficient columns")
+                    error_count += 1
+                    continue
+                
+                config_type = row[0].strip()
+                room_name = row[1].strip() if row[1].strip() else None
+                min_val = float(row[2])
+                max_val = float(row[3])
+                summer_pos = float(row[4])
+                summer_neg = float(row[5])
+                fall_pos = float(row[6])
+                fall_neg = float(row[7])
+                winter_pos = float(row[8])
+                winter_neg = float(row[9])
+                
+                # Validate values
+                if min_val >= max_val:
+                    errors.append(f"Row {row_num}: Min value must be less than max value")
+                    error_count += 1
+                    continue
+                
+                # Get room_id if room name is specified
+                room_id = None
+                if room_name and room_name.lower() != 'general':
+                    c.execute('SELECT id FROM rooms WHERE name = %s', (room_name,))
+                    room_result = c.fetchone()
+                    if room_result:
+                        room_id = room_result[0]
+                    else:
+                        errors.append(f"Row {row_num}: Room '{room_name}' not found")
+                        error_count += 1
+                        continue
+                
+                if config_type.lower() == 'temperature':
+                    # Check for overlapping temperature ranges
+                    if room_id:
+                        c.execute('''
+                            SELECT id FROM slope_configurations 
+                            WHERE room_id = %s AND (
+                                (temp_min <= %s AND temp_max >= %s) OR
+                                (temp_min <= %s AND temp_max >= %s) OR
+                                (temp_min >= %s AND temp_max <= %s)
+                            )
+                        ''', (room_id, min_val, min_val, max_val, max_val, min_val, max_val))
+                    else:
+                        c.execute('''
+                            SELECT id FROM slope_configurations 
+                            WHERE room_id IS NULL AND (
+                                (temp_min <= %s AND temp_max >= %s) OR
+                                (temp_min <= %s AND temp_max >= %s) OR
+                                (temp_min >= %s AND temp_max <= %s)
+                            )
+                        ''', (min_val, min_val, max_val, max_val, min_val, max_val))
+                    
+                    if c.fetchone():
+                        errors.append(f"Row {row_num}: Temperature range overlaps with existing configuration")
+                        error_count += 1
+                        continue
+                    
+                    # Insert temperature configuration
+                    c.execute('''
+                        INSERT INTO slope_configurations 
+                        (temp_min, temp_max, summer_positive_slope, summer_negative_slope,
+                         fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, room_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (min_val, max_val, summer_pos, summer_neg, fall_pos, fall_neg, winter_pos, winter_neg, room_id))
+                    
+                elif config_type.lower() == 'humidity':
+                    # Check for overlapping humidity ranges
+                    if room_id:
+                        c.execute('''
+                            SELECT id FROM humidity_slope_configurations 
+                            WHERE room_id = %s AND (
+                                (humidity_min <= %s AND humidity_max >= %s) OR
+                                (humidity_min <= %s AND humidity_max >= %s) OR
+                                (humidity_min >= %s AND humidity_max <= %s)
+                            )
+                        ''', (room_id, min_val, min_val, max_val, max_val, min_val, max_val))
+                    else:
+                        c.execute('''
+                            SELECT id FROM humidity_slope_configurations 
+                            WHERE room_id IS NULL AND (
+                                (humidity_min <= %s AND humidity_max >= %s) OR
+                                (humidity_min <= %s AND humidity_max >= %s) OR
+                                (humidity_min >= %s AND humidity_max <= %s)
+                            )
+                        ''', (min_val, min_val, max_val, max_val, min_val, max_val))
+                    
+                    if c.fetchone():
+                        errors.append(f"Row {row_num}: Humidity range overlaps with existing configuration")
+                        error_count += 1
+                        continue
+                    
+                    # Insert humidity configuration
+                    c.execute('''
+                        INSERT INTO humidity_slope_configurations 
+                        (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope,
+                         fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, room_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (min_val, max_val, summer_pos, summer_neg, fall_pos, fall_neg, winter_pos, winter_neg, room_id))
+                
+                else:
+                    errors.append(f"Row {row_num}: Invalid configuration type '{config_type}' (must be 'Temperature' or 'Humidity')")
+                    error_count += 1
+                    continue
+                
+                success_count += 1
+                
+            except ValueError as e:
+                errors.append(f"Row {row_num}: Invalid numeric value")
+                error_count += 1
+                continue
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+                error_count += 1
+                continue
+        
+        conn.commit()
+        conn.close()
+        
+        if success_count > 0:
+            flash(f'Successfully imported {success_count} configurations', 'success')
+        
+        if error_count > 0:
+            flash(f'Failed to import {error_count} configurations. Check the errors below.', 'error')
+            for error in errors[:10]:  # Show first 10 errors
+                flash(error, 'error')
+            if len(errors) > 10:
+                flash(f'... and {len(errors) - 10} more errors', 'error')
+        
+        return redirect(url_for('configurations'))
+        
+    except Exception as e:
+        flash(f'Error processing CSV file: {str(e)}', 'error')
+        return redirect(url_for('configurations'))
 
 @app.route('/add_slope_configuration', methods=['GET', 'POST'])
 @login_required

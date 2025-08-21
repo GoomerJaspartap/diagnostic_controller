@@ -128,19 +128,24 @@
                             <input type="text" class="form-control" id="mqtt_topic" name="mqtt_topic" value="{{ code[22] }}" placeholder="e.g., sensors/temperature/1">
                         </div>
                         <div class="col-md-6">
+                            <label for="mqtt_json_field" class="form-label">MQTT JSON Field</label>
+                            <input type="text" class="form-control" id="mqtt_json_field" name="mqtt_json_field" value="{{ code[23] }}" placeholder="e.g., AirtempRaw, SR1_Airtemp" required>
+                            <small class="form-text text-muted">Specify which field from the JSON payload to monitor</small>
+                        </div>
+                        <div class="col-md-6">
                             <label for="mqtt_username" class="form-label">MQTT Username</label>
-                            <input type="text" class="form-control" id="mqtt_username" name="mqtt_username" value="{{ code[23] }}">
+                            <input type="text" class="form-control" id="mqtt_username" name="mqtt_username" value="{{ code[24] }}">
                         </div>
                         <div class="col-md-6">
                             <label for="mqtt_password" class="form-label">MQTT Password</label>
-                            <input type="password" class="form-control" id="mqtt_password" name="mqtt_password" value="{{ code[24] }}">
+                            <input type="password" class="form-control" id="mqtt_password" name="mqtt_password" value="{{ code[25] }}">
                         </div>
                         <div class="col-md-6">
                             <label for="mqtt_qos" class="form-label">MQTT QoS Level</label>
                             <select class="form-select" id="mqtt_qos" name="mqtt_qos">
-                                <option value="0" {% if code[25] == 0 %}selected{% endif %}>0 - At most once</option>
-                                <option value="1" {% if code[25] == 1 %}selected{% endif %}>1 - At least once</option>
-                                <option value="2" {% if code[25] == 2 %}selected{% endif %}>2 - Exactly once</option>
+                                <option value="0" {% if code[26] == 0 %}selected{% endif %}>0 - At most once</option>
+                                <option value="1" {% if code[26] == 1 %}selected{% endif %}>1 - At least once</option>
+                                <option value="2" {% if code[26] == 2 %}selected{% endif %}>2 - Exactly once</option>
                             </select>
                         </div>
                     </div>
@@ -178,7 +183,7 @@ function toggleDataSourceFields() {
         mqttConfig.style.display = 'flex';
         // Make only essential MQTT fields required
         mqttConfig.querySelectorAll('input, select').forEach(field => {
-            if (field.id === 'mqtt_broker' || field.id === 'mqtt_port' || field.id === 'mqtt_topic') {
+            if (field.id === 'mqtt_broker' || field.id === 'mqtt_port' || field.id === 'mqtt_topic' || field.id === 'mqtt_json_field') {
                 field.required = true;
             } else {
                 field.required = false;

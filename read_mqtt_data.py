@@ -289,94 +289,116 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, userdata, msg):
     """Callback for when a message is received"""
     try:
-        # Get diagnostic code for this topic
+        # Get diagnostic codes for this topic (there might be multiple)
         conn = init_db()
         c = conn.cursor()
         c.execute('''
-            SELECT id, code, description, type, start_value, target_value, threshold, steady_state_threshold, state, time_to_achieve, enabled_at
+            SELECT id, code, description, type, start_value, target_value, threshold, steady_state_threshold, state, time_to_achieve, enabled_at, mqtt_json_field
             FROM diagnostic_codes 
             WHERE mqtt_topic = %s AND enabled = 1 AND data_source_type = 'mqtt'
         ''', (msg.topic,))
-        diagnostic = c.fetchone()
+        diagnostics = c.fetchall()
         
-        if not diagnostic:
-            print(f"[DEBUG] No diagnostic found for topic: {msg.topic}")
+        if not diagnostics:
+            print(f"[DEBUG] No diagnostic codes found for topic: {msg.topic}")
             return
 
-        # Parse the message payload
+        # Parse the message payload once
         try:
             payload_str = msg.payload.decode().strip()
-            print(f"[DEBUG] Received payload for {diagnostic[1]} (topic: {msg.topic}): {payload_str}")
+            print(f"[DEBUG] Received payload for topic {msg.topic}: {payload_str}")
             
             try:
                 # Try to parse as JSON first
                 payload = json.loads(payload_str)
-                if isinstance(payload, dict):
-                    value = payload.get('value')
-                    if value is None:
-                        for v in payload.values():
-                            if isinstance(v, (int, float)):
-                                value = v
-                                break
-                elif isinstance(payload, (int, float)):
-                    value = payload
-                else:
-                    value = None
             except json.JSONDecodeError:
-                try:
-                    value = float(payload_str.strip())
-                except ValueError:
-                    print(f"[DEBUG] Could not parse value from payload: {payload_str}")
-                    value = None
-
-            print(f"[DEBUG] Parsed value for {diagnostic[1]}: {value}")
-
+                print(f"[DEBUG] Could not parse JSON payload: {payload_str}")
+                payload = None
+                
         except Exception as e:
             print(f"[DEBUG] Error parsing payload: {str(e)}")
-            value = None
+            payload = None
 
-        # Log data to data_logs table
-        if value is not None:
-            conn_data = init_db()
-            c_data = conn_data.cursor()
-            c_data.execute('INSERT INTO data_logs (code, value, data_source) VALUES (%s, %s, %s)', (diagnostic[1], value, 'mqtt'))
-            conn_data.commit()
-            conn_data.close()
-
-        # Check limits using the same logic as Modbus
-        steady_state_threshold = diagnostic[7] if len(diagnostic) > 8 else None
-        time_to_achieve = diagnostic[9] if len(diagnostic) > 9 else None
-        enabled_at = diagnostic[10] if len(diagnostic) > 10 else None
-        status, fault_type = check_limits(value, diagnostic[4], diagnostic[5], diagnostic[6], time_to_achieve, enabled_at, steady_state_threshold)
+        # Process each diagnostic code for this topic
+        status_updates = []
         
-        print(f"[DEBUG] Status for {diagnostic[1]}: {status}")
+        for diagnostic in diagnostics:
+            try:
+                # Extract value for this specific diagnostic code
+                value = None
+                if payload is not None:
+                    if isinstance(payload, dict):
+                        # Use the specified JSON field from diagnostic code configuration
+                        mqtt_json_field = diagnostic[11] if len(diagnostic) > 11 else 'value'
+                        if mqtt_json_field and mqtt_json_field in payload:
+                            value = payload[mqtt_json_field]
+                            print(f"[DEBUG] Extracted value from JSON field '{mqtt_json_field}': {value} for {diagnostic[1]}")
+                        else:
+                            # Fallback: try to find any numeric value if specified field not found
+                            if mqtt_json_field and mqtt_json_field != 'value':
+                                print(f"[DEBUG] Specified JSON field '{mqtt_json_field}' not found in payload for {diagnostic[1]}. Available fields: {list(payload.keys())}")
+                            value = payload.get('value')
+                            if value is None:
+                                for v in payload.values():
+                                    if isinstance(v, (int, float)):
+                                        value = v
+                                        break
+                    elif isinstance(payload, (int, float)):
+                        value = payload
+                
+                if value is None:
+                    print(f"[DEBUG] Could not extract value for diagnostic code {diagnostic[1]}")
+                    continue
 
-        # Create status update for batch processing
-        status_update = {
-            'code': diagnostic[1],
-            'state': status,
-            'value': value,
-            'fault_type': fault_type
-        }
+                print(f"[DEBUG] Parsed value for {diagnostic[1]}: {value}")
 
-        # Update diagnostic status using batch processing
-        successful, errors = update_diagnostics_batch([status_update])
-        
-        if successful:
-            print(f"[DEBUG] Successfully updated diagnostic {diagnostic[1]} to {status}")
-        if errors:
-            print(f"[DEBUG] Failed to update diagnostic {diagnostic[1]}: {errors}")
+                # Log data to data_logs table
+                conn_data = init_db()
+                c_data = conn_data.cursor()
+                c_data.execute('INSERT INTO data_logs (code, value, data_source) VALUES (%s, %s, %s)', (diagnostic[1], value, 'mqtt'))
+                conn_data.commit()
+                conn_data.close()
 
-        # Send alert if status is Fail or No Status
-        if status in ('Fail', 'No Status'):
-            details = get_diagnostic_details(diagnostic[1])
-            if details:
-                emails, phone_numbers = get_contacts()
-                subject = "Fault Detected"
-                message = "Fault Detected"
-                current_time = format_datetime(datetime.now())
-                refresh_time = get_refresh_time()
-                send_alert(emails, phone_numbers, subject, message, [details], current_time, refresh_time)
+                # Check limits using the same logic as Modbus
+                steady_state_threshold = diagnostic[7] if len(diagnostic) > 8 else None
+                time_to_achieve = diagnostic[9] if len(diagnostic) > 9 else None
+                enabled_at = diagnostic[10] if len(diagnostic) > 10 else None
+                status, fault_type = check_limits(value, diagnostic[4], diagnostic[5], diagnostic[6], time_to_achieve, enabled_at, steady_state_threshold)
+                
+                print(f"[DEBUG] Status for {diagnostic[1]}: {status}")
+
+                # Create status update for batch processing
+                status_update = {
+                    'code': diagnostic[1],
+                    'state': status,
+                    'value': value,
+                    'fault_type': fault_type
+                }
+                status_updates.append(status_update)
+
+                # Send alert if status is Fail or No Status
+                if status in ('Fail', 'No Status'):
+                    details = get_diagnostic_details(diagnostic[1])
+                    if details:
+                        emails, phone_numbers = get_contacts()
+                        subject = "Fault Detected"
+                        message = "Fault Detected"
+                        current_time = format_datetime(datetime.now())
+                        refresh_time = get_refresh_time()
+                        send_alert(emails, phone_numbers, subject, message, [details], current_time, refresh_time)
+                        
+            except Exception as e:
+                print(f"[DEBUG] Error processing diagnostic code {diagnostic[1]}: {str(e)}")
+                continue
+
+        # Update all diagnostic statuses using batch processing
+        if status_updates:
+            successful, errors = update_diagnostics_batch(status_updates)
+            
+            if successful:
+                print(f"[DEBUG] Successfully updated {len(successful)} diagnostic codes")
+            if errors:
+                print(f"[DEBUG] Failed to update {len(errors)} diagnostic codes: {errors}")
 
         conn.close()
 

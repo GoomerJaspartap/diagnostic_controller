@@ -128,6 +128,11 @@
                             <input type="text" class="form-control" id="mqtt_topic" name="mqtt_topic" placeholder="e.g., sensors/temperature/1">
                         </div>
                         <div class="col-md-6">
+                            <label for="mqtt_json_field" class="form-label">MQTT JSON Field</label>
+                            <input type="text" class="form-control" id="mqtt_json_field" name="mqtt_json_field" placeholder="e.g., AirtempRaw, SR1_Airtemp" required>
+                            <small class="form-text text-muted">Specify which field from the JSON payload to monitor</small>
+                        </div>
+                        <div class="col-md-6">
                             <label for="mqtt_username" class="form-label">MQTT Username</label>
                             <input type="text" class="form-control" id="mqtt_username" name="mqtt_username">
                         </div>
@@ -178,7 +183,7 @@ function toggleDataSourceFields() {
         mqttConfig.style.display = 'flex';
         // Make only essential MQTT fields required
         mqttConfig.querySelectorAll('input, select').forEach(field => {
-            if (field.id === 'mqtt_broker' || field.id === 'mqtt_port' || field.id === 'mqtt_topic') {
+            if (field.id === 'mqtt_broker' || field.id === 'mqtt_port' || field.id === 'mqtt_topic' || field.id === 'mqtt_json_field') {
                 field.required = true;
             } else {
                 field.required = false;
