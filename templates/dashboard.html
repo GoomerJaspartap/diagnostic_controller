@@ -533,6 +533,7 @@ function downloadRoomData(roomId, roomName) {
     // Make API call to download data
     fetch(`/api/download_room_data/${roomId}`, {
         method: 'GET',
+        credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
         }
@@ -540,8 +541,12 @@ function downloadRoomData(roomId, roomName) {
     .then(response => {
         if (response.ok) {
             return response.blob();
+        } else if (response.status === 403) {
+            throw new Error('Authentication required. Please log in first.');
+        } else if (response.status === 404) {
+            throw new Error('Room not found.');
         } else {
-            throw new Error('Download failed');
+            throw new Error(`Download failed with status: ${response.status}`);
         }
     })
     .then(blob => {
@@ -580,6 +585,7 @@ function downloadRoomGraphs(roomId, roomName) {
     // Make API call to download graphs
     fetch(`/api/download_room_graphs/${roomId}`, {
         method: 'GET',
+        credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
         }
@@ -587,8 +593,12 @@ function downloadRoomGraphs(roomId, roomName) {
     .then(response => {
         if (response.ok) {
             return response.blob();
+        } else if (response.status === 403) {
+            throw new Error('Authentication required. Please log in first.');
+        } else if (response.status === 404) {
+            throw new Error('Room not found.');
         } else {
-            throw new Error('Download failed');
+            throw new Error(`Download failed with status: ${response.status}`);
         }
     })
     .then(blob => {
@@ -627,6 +637,7 @@ function downloadDiagnosticGraph(code, description) {
     // Make API call to download individual graph
     fetch(`/api/download_diagnostic_graph/${code}`, {
         method: 'GET',
+        credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
         }
@@ -634,8 +645,12 @@ function downloadDiagnosticGraph(code, description) {
     .then(response => {
         if (response.ok) {
             return response.blob();
+        } else if (response.status === 403) {
+            throw new Error('Authentication required. Please log in first.');
+        } else if (response.status === 404) {
+            throw new Error('Diagnostic code not found or not enabled.');
         } else {
-            throw new Error('Download failed');
+            throw new Error(`Download failed with status: ${response.status}`);
         }
     })
     .then(blob => {
@@ -643,7 +658,7 @@ function downloadDiagnosticGraph(code, description) {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${code}_${description.replace(/[^a-zA-Z0-9]/g, '_')}_graph_${new Date().toISOString().split('T')[0]}.html`;
+        a.download = `${code}_graph_${new Date().toISOString().split('T')[0]}.html`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
