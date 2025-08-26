@@ -384,8 +384,7 @@ def on_message(client, userdata, msg):
                         subject = "Fault Detected"
                         message = "Fault Detected"
                         current_time = format_datetime(datetime.now())
-                        refresh_time = get_refresh_time()
-                        send_alert(emails, phone_numbers, subject, message, [details], current_time, refresh_time)
+                        send_alert(emails, phone_numbers, subject, message, [details], current_time)
                         
             except Exception as e:
                 print(f"[DEBUG] Error processing diagnostic code {diagnostic[1]}: {str(e)}")

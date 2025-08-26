@@ -536,7 +536,7 @@ def chamber_modbus_loop(chamber_id, chamber_name, refresh_time):
                     subject = f"Fault Detected in {chamber_name}"
                     message = "Fault Detected"
                     current_time = format_datetime(datetime.now())
-                    send_alert(emails, phone_numbers, subject, message, alert_updates, current_time, refresh_time)
+                    send_alert(emails, phone_numbers, subject, message, alert_updates, current_time)
         else:
             print(f"No active Modbus diagnostics for chamber {chamber_name}")
         print(f"Waiting {refresh_time} seconds before next reading for chamber {chamber_name}...")
@@ -629,7 +629,7 @@ def main(room_id=None):
                         subject = f"Fault Detected in {chamber_name}"
                         message = "Fault Detected"
                         current_time = format_datetime(datetime.now())
-                        send_alert(emails, phone_numbers, subject, message, alert_updates, current_time, refresh_time)
+                        send_alert(emails, phone_numbers, subject, message, alert_updates, current_time)
                 else:
                     print(f"No active Modbus diagnostics for chamber {chamber_name}")
             else:
@@ -716,7 +716,7 @@ def main(room_id=None):
                         subject = f"Fault Detected in {chamber_name}"
                         message = "Fault Detected"
                         current_time = format_datetime(datetime.now())
-                        send_alert(emails, phone_numbers, subject, message, alert_updates, current_time, refresh_time)
+                        send_alert(emails, phone_numbers, subject, message, alert_updates, current_time)
                 else:
                     print(f"No active Modbus diagnostics for chamber {chamber_name}")
             else:

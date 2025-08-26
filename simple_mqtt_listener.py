@@ -39,7 +39,7 @@ def main():
     client.on_message = on_message
     
     print("Connecting to MQTT broker...")
-    client.connect("localhost", 1883, 60)
+    client.connect("10.160.0.170", 1883, 60)
     
     print("Listening for messages... (Press Ctrl+C to stop)")
     client.loop_forever()

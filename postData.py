@@ -1,7 +1,7 @@
 from pymodbus.client import AsyncModbusTcpClient
 import asyncio
 
-async def write_holding_registers(ip="10.160.0.157", port=5020):
+async def write_holding_registers(ip="192.168.3.91", port=5020):
     while True:
         # Get user input for the value
         try:

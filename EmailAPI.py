@@ -8,9 +8,107 @@ import os
 from dotenv import load_dotenv
 import io
 import datetime
+import threading
+import queue
+import time
 
 # Load environment variables
 load_dotenv()
+
+# Global email queue and worker thread
+email_queue = queue.Queue()
+email_worker_running = False
+email_worker_thread = None
+
+# Start the email worker thread automatically when module is imported
+def _auto_start_worker():
+    """Automatically start the email worker when module is imported"""
+    try:
+        start_email_worker()
+    except Exception as e:
+        print(f"[EMAIL WARNING] Could not auto-start email worker: {e}")
+
+# Start worker thread automatically
+_auto_start_worker()
+
+def start_email_worker():
+    """Start the email worker thread if it's not already running"""
+    global email_worker_running, email_worker_thread
+    
+    if not email_worker_running:
+        email_worker_running = True
+        email_worker_thread = threading.Thread(target=email_worker, daemon=True)
+        email_worker_thread.start()
+        print("[EMAIL DEBUG] Email worker thread started")
+    else:
+        print("[EMAIL DEBUG] Email worker thread already running")
+
+def stop_email_worker():
+    """Gracefully stop the email worker thread"""
+    global email_worker_running
+    
+    if email_worker_running:
+        print("[EMAIL DEBUG] Stopping email worker thread...")
+        email_worker_running = False
+        
+        # Wait for the worker to finish processing current emails
+        if email_worker_thread and email_worker_thread.is_alive():
+            email_worker_thread.join(timeout=10)  # Wait up to 10 seconds
+            
+            if email_worker_thread.is_alive():
+                print("[EMAIL WARNING] Email worker thread did not stop gracefully")
+            else:
+                print("[EMAIL DEBUG] Email worker thread stopped gracefully")
+    else:
+        print("[EMAIL DEBUG] Email worker thread not running")
+
+def email_worker():
+    """Background worker thread that processes email queue"""
+    global email_worker_running
+    
+    print("[EMAIL DEBUG] Email worker thread started and running")
+    
+    while email_worker_running:
+        try:
+            # Get email task from queue with timeout
+            try:
+                email_task = email_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            
+            # Process the email
+            recipients, subject, message, table_data, text, current_time = email_task
+            
+            print(f"[EMAIL DEBUG] Processing email for {recipients}...")
+            
+            # Send email synchronously in this thread
+            success = _send_status_email_sync(recipients, subject, message, table_data, text, current_time)
+            
+            if success:
+                print(f"[EMAIL DEBUG] Email sent successfully to {recipients}")
+            else:
+                print(f"[EMAIL ERROR] Failed to send email to {recipients}")
+                
+            # Mark task as done
+            email_queue.task_done()
+            
+        except Exception as e:
+            print(f"[EMAIL ERROR] Error in email worker: {e}")
+            # Mark task as done even if it failed
+            try:
+                email_queue.task_done()
+            except:
+                pass
+    
+    print("[EMAIL DEBUG] Email worker thread stopped")
+
+def get_email_queue_status():
+    """Get current status of the email queue"""
+    return {
+        'queue_size': email_queue.qsize(),
+        'worker_running': email_worker_running,
+        'worker_alive': email_worker_thread.is_alive() if email_worker_thread else False
+    }
 
 def format_datetime(dt):
     if not dt:
@@ -22,13 +120,34 @@ def format_datetime(dt):
             return dt
     return dt.strftime('%d %B, %Y %H:%M:%S')
 
-def send_status_email(recipients, subject, message, table_data, text, current_time, refresh_time):
+def send_status_email(recipients, subject, message, table_data, text, current_time):
+    """
+    Asynchronous email sending - adds email to queue and returns immediately
+    """
+    # Start email worker if not running
+    start_email_worker()
+    
+    # Add email task to queue
+    email_task = (recipients, subject, message, table_data, text, current_time)
+    email_queue.put(email_task)
+    
+    print(f"[EMAIL DEBUG] Email queued for {recipients} - will be sent asynchronously")
+    return True
+
+def _send_status_email_sync(recipients, subject, message, table_data, text, current_time):
+    """
+    Internal synchronous email sending function used by the worker thread
+    """
     # Get email credentials from environment variables
     sender_email = os.getenv('SENDER_EMAIL')
     password = os.getenv('EMAIL_PASSWORD')
     
+    print(f"[EMAIL DEBUG] Sending email from {sender_email} to {recipients}")
+    
     if not sender_email or not password:
-        raise ValueError("Email credentials not found in environment variables")
+        error_msg = "Email credentials not found in environment variables"
+        print(f"[EMAIL ERROR] {error_msg}")
+        return False
 
     # Convert single recipient to list
     if isinstance(recipients, str):
@@ -41,10 +160,15 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
     msg['Subject'] = subject
 
     # Read and attach the logo
-    with open('static/logo.png', 'rb') as f:
-        logo = MIMEImage(f.read())
-        logo.add_header('Content-ID', '<logo>')
-        msg.attach(logo)
+    try:
+        with open('static/logo.png', 'rb') as f:
+            logo = MIMEImage(f.read())
+            logo.add_header('Content-ID', '<logo>')
+            msg.attach(logo)
+    except FileNotFoundError:
+        print("Warning: Logo file 'static/logo.png' not found. Email will be sent without logo.")
+    except Exception as e:
+        print(f"Warning: Error reading logo file: {e}. Email will be sent without logo.")
 
     # HTML content with enhanced professional styling
     html = f"""<!DOCTYPE html>
@@ -68,7 +192,6 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
             <p style=\"font-size: 16px; margin-bottom: 22px; text-align: center; color: #444;\">{message}</p>
             <div style=\"background: #f4f6fa; padding: 14px 18px; border-radius: 8px; margin-bottom: 28px; border: 1px solid #e0e6ed; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 15px;\">
                 <span><strong>Last Read Time:</strong> {format_datetime(current_time)}</span>
-                <span style=\"margin-left: 24px;\"><strong>Refresh Time:</strong> {refresh_time} seconds</span>
             </div>
 """
     for room, diagnostics in table_data.items():
@@ -159,18 +282,48 @@ def send_status_email(recipients, subject, message, table_data, text, current_ti
     msg.attach(MIMEText(text, 'plain'))
     msg.attach(MIMEText(html, 'html'))
 
-    # Connect to Gmail's SMTP server
+    # Use only the working method: SMTP_SSL on port 465
+    server = None
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()  # Enable TLS
-        server.login(sender_email, password)  # Login with email and App Password
-        server.sendmail(sender_email, recipients, msg.as_string())  # Send email
+        print(f"[EMAIL DEBUG] Connecting to smtp.gmail.com:465 using SSL...")
+        
+        # Create SSL connection with proper timeouts
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30)
+        print(f"[EMAIL DEBUG] SSL connection created successfully")
+        
+        # Login
+        print(f"[EMAIL DEBUG] Logging in...")
+        server.login(sender_email, password)
+        
+        # Send email
+        print(f"[EMAIL DEBUG] Sending email...")
+        server.sendmail(sender_email, recipients, msg.as_string())
+        
+        print(f"[EMAIL DEBUG] Email sent successfully!")
         return True
+        
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[EMAIL ERROR] Authentication failed: {e}")
+        print("  Check if your Gmail App Password is correct and 2FA is enabled")
+        return False
+    except smtplib.SMTPConnectError as e:
+        print(f"[EMAIL ERROR] Connection failed: {e}")
+        print("  Check network connectivity and firewall settings")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[EMAIL ERROR] SMTP error: {e}")
+        return False
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"[EMAIL ERROR] Unexpected error: {e}")
         return False
     finally:
-        server.quit() 
+        if server:
+            try:
+                print(f"[EMAIL DEBUG] Closing SMTP connection...")
+                server.quit()
+                print(f"[EMAIL DEBUG] SMTP connection closed")
+            except Exception as e:
+                print(f"[EMAIL WARNING] Error closing SMTP connection: {e}")
 
 def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
     # Use table-based layout and inline styles for xhtml2pdf compatibility
@@ -236,7 +389,7 @@ def generate_pdf_html(subject, message, table_data, current_time, refresh_time):
     pdf_html += f"""
                     <div style='margin-top:24px; text-align:center; color:#7f8c8d; font-size:12px;'>
                         Generated on {format_datetime(current_time)}. Do not reply to this email.<br>
-                        &copy; {datetime.datetime.now().year} Automotive Center of Excellence. All rights reserved.<br>
+                        &copy; {datetime.now().year} Automotive Center of Excellence. All rights reserved.<br>
                         <a href='https://ace.ontariotechu.ca' style='color:#1a2a44; text-decoration:none;'>ace.ontariotechu.ca</a>
                     </div>
                 </td>

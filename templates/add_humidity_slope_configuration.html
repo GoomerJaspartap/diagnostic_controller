@@ -113,7 +113,27 @@
         <!-- Form -->
         <div class="card shadow">
             <div class="card-body">
-                <form method="POST">
+                <form method="POST" id="humidityForm">
+                    <!-- Room Selection Section -->
+                    <div class="humidity-range-section">
+                        <div class="humidity-range-title">
+                            <i class="fas fa-building"></i>
+                            Chamber Selection
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="room_id" class="form-label">Select Chamber</label>
+                                <select class="form-control" id="room_id" name="room_id" required>
+                                    <option value="">Choose a chamber...</option>
+                                    {% for room in rooms %}
+                                    <option value="{{ room[0] }}">{{ room[1] }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="help-text">Select the chamber this humidity configuration applies to</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Humidity Range Section -->
                     <div class="humidity-range-section">
                         <div class="humidity-range-title">
@@ -272,11 +292,21 @@
 <script>
 // Form validation
 document.addEventListener('DOMContentLoaded', function() {
-    const form = document.querySelector('form');
+    const form = document.getElementById('humidityForm');
     const humidityMin = document.getElementById('humidity_min');
     const humidityMax = document.getElementById('humidity_max');
+    const roomSelect = document.getElementById('room_id');
     
     form.addEventListener('submit', function(e) {
+        // Check if room is selected
+        if (!roomSelect.value) {
+            e.preventDefault();
+            alert('Please select a chamber before submitting the form.');
+            roomSelect.focus();
+            return false;
+        }
+        
+        // Check humidity range
         const min = parseFloat(humidityMin.value);
         const max = parseFloat(humidityMax.value);
         
@@ -285,6 +315,13 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Minimum humidity must be less than maximum humidity');
             return false;
         }
+        
+        console.log('Form submitted with room_id:', roomSelect.value);
+    });
+    
+    // Debug: Log when room selection changes
+    roomSelect.addEventListener('change', function() {
+        console.log('Room selected:', this.value, 'Text:', this.options[this.selectedIndex].text);
     });
     
     // Auto-dismiss flash messages after 5 seconds

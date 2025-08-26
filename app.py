@@ -2873,6 +2873,7 @@ def configurations():
     ''')
     humidity_configurations = []
     for row in c.fetchall():
+        print("Humidity config row:", row)  # Debug
         humidity_configurations.append({
             'id': row[0],
             'humidity_min': row[1],
@@ -2888,6 +2889,52 @@ def configurations():
             'room_id': row[11],
             'room_name': row[12] if row[12] else 'General'
         })
+        print("Processed config:", humidity_configurations[-1])  # Debug
+    
+    # Group configurations by room/chamber
+    room_configurations = {}
+    
+    # Process temperature configurations
+    for config in temp_configurations:
+        room_name = config['room_name']
+        if room_name not in room_configurations:
+            room_configurations[room_name] = {
+                'room_name': room_name,
+                'temperature_configs': [],
+                'humidity_configs': []
+            }
+        room_configurations[room_name]['temperature_configs'].append(config)
+    
+    # Process humidity configurations
+    for config in humidity_configurations:
+        room_name = config['room_name']
+        if room_name not in room_configurations:
+            room_configurations[room_name] = {
+                'room_name': room_name,
+                'temperature_configs': [],
+                'humidity_configs': []
+            }
+        room_configurations[room_name]['humidity_configs'].append(config)
+    
+    # Convert to sorted list
+    room_configurations = sorted(room_configurations.values(), key=lambda x: x['room_name'])
+    
+    # Fetch season temperature ranges
+    c.execute('''
+        SELECT id, season, temp_min, temp_max, created_at, updated_at
+        FROM season_temperature_ranges
+        ORDER BY temp_min ASC
+    ''')
+    season_ranges = []
+    for row in c.fetchall():
+        season_ranges.append({
+            'id': row[0],
+            'season': row[1],
+            'temp_min': row[2],
+            'temp_max': row[3],
+            'created_at': row[4],
+            'updated_at': row[5]
+        })
     
     # Fetch all rooms for dropdowns
     c.execute('SELECT id, name FROM rooms ORDER BY name')
@@ -2896,8 +2943,8 @@ def configurations():
     conn.close()
     
     return render_template('configurations.html', 
-                         temp_configurations=temp_configurations,
-                         humidity_configurations=humidity_configurations,
+                         room_configurations=room_configurations,
+                         season_ranges=season_ranges,
                          rooms=rooms)
 
 @app.route('/export_slope_configurations_csv')
@@ -3245,6 +3292,9 @@ def add_slope_configuration():
 def add_humidity_slope_configuration():
     if request.method == 'POST':
         try:
+            # Debug: Print form data
+            print("Form data received:", dict(request.form))
+            
             humidity_min = float(request.form['humidity_min'])
             humidity_max = float(request.form['humidity_max'])
             summer_positive_slope = float(request.form['summer_positive_slope'])
@@ -3253,6 +3303,10 @@ def add_humidity_slope_configuration():
             fall_negative_slope = float(request.form['fall_negative_slope'])
             winter_positive_slope = float(request.form['winter_positive_slope'])
             winter_negative_slope = float(request.form['winter_negative_slope'])
+            room_id = request.form.get('room_id')
+            print("Room ID from form:", room_id, "Type:", type(room_id))
+            room_id = int(room_id) if room_id and room_id != '' else None
+            print("Processed room_id:", room_id)
             
             if humidity_min >= humidity_max:
                 flash('Minimum humidity must be less than maximum humidity', 'error')
@@ -3261,24 +3315,42 @@ def add_humidity_slope_configuration():
             conn = psycopg2.connect(**DB_CONFIG)
             c = conn.cursor()
             
-            # Check for overlapping humidity ranges
-            c.execute('''
-                SELECT id FROM humidity_slope_configurations 
-                WHERE (humidity_min <= %s AND humidity_max >= %s) 
-                   OR (humidity_min <= %s AND humidity_max >= %s)
-                   OR (humidity_min >= %s AND humidity_max <= %s)
-            ''', (humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
+            # Check for overlapping humidity ranges (only within the same room or general)
+            if room_id:
+                c.execute('''
+                    SELECT id FROM humidity_slope_configurations 
+                    WHERE room_id = %s AND (
+                        (humidity_min <= %s AND humidity_max >= %s) 
+                        OR (humidity_min <= %s AND humidity_max >= %s)
+                        OR (humidity_min >= %s AND humidity_max <= %s)
+                    )
+                ''', (room_id, humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
+            else:
+                c.execute('''
+                    SELECT id FROM humidity_slope_configurations 
+                    WHERE room_id IS NULL AND (
+                        (humidity_min <= %s AND humidity_max >= %s) 
+                        OR (humidity_min <= %s AND humidity_max >= %s)
+                        OR (humidity_min >= %s AND humidity_max <= %s)
+                    )
+                ''', (humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
             
             if c.fetchone():
-                flash('Humidity range overlaps with existing configuration', 'error')
+                flash('Humidity range overlaps with existing configuration for this room', 'error')
                 conn.close()
                 return redirect(url_for('configurations'))
             
+            print("About to insert with room_id:", room_id)
             c.execute('''
-                INSERT INTO humidity_slope_configurations (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
+                INSERT INTO humidity_slope_configurations (room_id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, 
                                                          fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope))
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (room_id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope))
+            
+            # Verify the insert
+            c.execute('SELECT room_id FROM humidity_slope_configurations WHERE id = LASTVAL()')
+            inserted_room_id = c.fetchone()
+            print("Inserted record has room_id:", inserted_room_id)
             
             conn.commit()
             conn.close()
@@ -3292,7 +3364,14 @@ def add_humidity_slope_configuration():
             flash(f'Error adding humidity slope configuration: {str(e)}', 'error')
             return redirect(url_for('configurations'))
     
-    return render_template('add_humidity_slope_configuration.html')
+    # Fetch all rooms for dropdown
+    conn = psycopg2.connect(**DB_CONFIG)
+    c = conn.cursor()
+    c.execute('SELECT id, name FROM rooms ORDER BY name')
+    rooms = c.fetchall()
+    conn.close()
+    
+    return render_template('add_humidity_slope_configuration.html', rooms=rooms)
 
 @app.route('/edit_slope_configuration/<int:config_id>', methods=['GET', 'POST'])
 @login_required
@@ -3410,28 +3489,38 @@ def edit_humidity_slope_configuration(config_id):
                 flash('Minimum humidity must be less than maximum humidity', 'error')
                 return redirect(url_for('configurations'))
             
-            # Check for overlapping humidity ranges (excluding current record)
-            c.execute('''
-                SELECT id FROM humidity_slope_configurations 
-                WHERE id != %s AND (
-                    (humidity_min <= %s AND humidity_max >= %s) 
-                    OR (humidity_min <= %s AND humidity_max >= %s)
-                    OR (humidity_min >= %s AND humidity_max <= %s)
-                )
-            ''', (config_id, humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
+            # Check for overlapping humidity ranges (excluding current record, only within the same room or general)
+            if room_id:
+                c.execute('''
+                    SELECT id FROM humidity_slope_configurations 
+                    WHERE id != %s AND room_id = %s AND (
+                        (humidity_min <= %s AND humidity_max >= %s) 
+                        OR (humidity_min <= %s AND humidity_max >= %s)
+                        OR (humidity_min >= %s AND humidity_max <= %s)
+                    )
+                ''', (config_id, room_id, humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
+            else:
+                c.execute('''
+                    SELECT id FROM humidity_slope_configurations 
+                    WHERE id != %s AND room_id IS NULL AND (
+                        (humidity_min <= %s AND humidity_max >= %s) 
+                        OR (humidity_min <= %s AND humidity_max >= %s)
+                        OR (humidity_min >= %s AND humidity_max <= %s)
+                    )
+                ''', (config_id, humidity_min, humidity_min, humidity_max, humidity_max, humidity_min, humidity_max))
             
             if c.fetchone():
-                flash('Humidity range overlaps with existing configuration', 'error')
+                flash('Humidity range overlaps with existing configuration for this room', 'error')
                 conn.close()
                 return redirect(url_for('configurations'))
             
             c.execute('''
                 UPDATE humidity_slope_configurations 
-                SET humidity_min = %s, humidity_max = %s, summer_positive_slope = %s, summer_negative_slope = %s, 
+                SET room_id = %s, humidity_min = %s, humidity_max = %s, summer_positive_slope = %s, summer_negative_slope = %s, 
                     fall_positive_slope = %s, fall_negative_slope = %s, winter_positive_slope = %s, winter_negative_slope = %s, 
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-            ''', (humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, config_id))
+            ''', (room_id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope, config_id))
             
             conn.commit()
             conn.close()
@@ -3446,25 +3535,31 @@ def edit_humidity_slope_configuration(config_id):
             return redirect(url_for('configurations'))
     
     # GET request - fetch current configuration
-    c.execute('SELECT id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope FROM humidity_slope_configurations WHERE id = %s', (config_id,))
+    c.execute('SELECT id, room_id, humidity_min, humidity_max, summer_positive_slope, summer_negative_slope, fall_positive_slope, fall_negative_slope, winter_positive_slope, winter_negative_slope FROM humidity_slope_configurations WHERE id = %s', (config_id,))
     config = c.fetchone()
-    conn.close()
     
     if not config:
+        conn.close()
         flash('Humidity slope configuration not found', 'error')
         return redirect(url_for('configurations'))
     
+    # Fetch all rooms for dropdown
+    c.execute('SELECT id, name FROM rooms ORDER BY name')
+    rooms = c.fetchall()
+    conn.close()
+    
     return render_template('edit_humidity_slope_configuration.html', config={
         'id': config[0],
-        'humidity_min': config[1],
-        'humidity_max': config[2],
-        'summer_positive_slope': config[3],
-        'summer_negative_slope': config[4],
-        'fall_positive_slope': config[5],
-        'fall_negative_slope': config[6],
-        'winter_positive_slope': config[7],
-        'winter_negative_slope': config[8]
-    })
+        'room_id': config[1],
+        'humidity_min': config[2],
+        'humidity_max': config[3],
+        'summer_positive_slope': config[4],
+        'summer_negative_slope': config[5],
+        'fall_positive_slope': config[6],
+        'fall_negative_slope': config[7],
+        'winter_positive_slope': config[8],
+        'winter_negative_slope': config[9]
+    }, rooms=rooms)
 
 @app.route('/delete_slope_configuration/<int:config_id>', methods=['POST'])
 @login_required

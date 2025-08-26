@@ -182,7 +182,7 @@
                         <th class="select-col d-none"><input type="checkbox" class="select-all-codes" data-room="{{ room_idx }}"></th>
                         <th>Code</th>
                         <th>Description</th>
-                                    <th>Type</th>
+                        <th>Type</th>
                         <th>State</th>
                         <th>Last Failure</th>
                         <th>History</th>
@@ -198,6 +198,7 @@
                             <td class="select-col d-none"><input type="checkbox" class="code-select-checkbox" data-code-id="{{ code[0] }}" data-code-name="{{ code[1] }}" data-source-type="{{ code[8] }}" data-room-name="{{ room_name }}" data-description="{{ code[2] }}" data-room="{{ room_idx }}"></td>
                             <td data-label="Code">{{ code[1] }}</td>
                             <td data-label="Description">{{ code[2] }}</td>
+
                                     <td data-label="Type">
                                         <span class="badge type-badge {{ code[3].lower() }}">
                                             <i class="fas {% if code[3] == 'Temperature' %}fa-thermometer-half{% else %}fa-tint{% endif %}"></i>
@@ -236,18 +237,18 @@
                                 </span>
                             </td>
                             <td data-label="Diagnostic Parameters">
-                                {% if code[28] %}
+                                {% if code[29] == 1 %}
                                     <small>
-                                        <strong>Start:</strong> {{ "%.2f"|format(code[31]) if code[31] is not none else 'N/A' }}<br>
-                                        <strong>Target:</strong> {{ "%.2f"|format(code[32]) if code[32] is not none else 'N/A' }}<br>
-                                        <strong>Threshold:</strong> {{ "%.2f"|format(code[33]) if code[33] is not none else 'N/A' }}<br>
-                                        <strong>Time:</strong> {{ code[34] if code[34] is not none else 'N/A' }}s<br>
+                                        <strong>Start:</strong> {{ "%.2f"|format(code[33]) if code[33] is not none else 'N/A' }}<br>
+                                        <strong>Target:</strong> {{ "%.2f"|format(code[34]) if code[34] is not none else 'N/A' }}<br>
+                                        <strong>Threshold:</strong> {{ "%.2f"|format(code[35]) if code[35] is not none else 'N/A' }}<br>
+                                        <strong>Time:</strong> {{ code[37] if code[37] is not none else 'N/A' }}s<br>
                                         <strong>Enabled:</strong> <span class="utc-to-local">
-    {% if code[35] is not none %}
-        {% if code[35]|string|length > 10 and '-' in code[35]|string %}
-            {{ code[35] }}
+    {% if code[38] is not none %}
+        {% if code[38]|string|length > 10 and '-' in code[38]|string %}
+            {{ code[38] }}
         {% else %}
-            {{ code[35] }}
+            {{ code[38] }}
         {% endif %}
     {% else %}
         N/A
@@ -259,7 +260,7 @@
                                 {% endif %}
                             </td>
                             <td data-label="Status">
-                                {% if code[28] %}
+                                {% if code[29] == 1 %}
                                     <button type="button" class="btn btn-sm btn-success disable-diagnostic-btn" 
                                             data-code-id="{{ code[0] }}" data-code-name="{{ code[1] }}">
                                         Enabled
@@ -732,7 +733,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Close modal and reload page
                 const modal = bootstrap.Modal.getInstance(document.getElementById('diagnosticParamsModal'));
                 modal.hide();
-                location.reload();
+                // Force a hard reload to ensure fresh data
+                window.location.reload(true);
             } else {
                 alert('Error enabling diagnostic code: ' + data.error);
             }
@@ -753,7 +755,8 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                location.reload();
+                // Force a hard reload to ensure fresh data
+                window.location.reload(true);
             } else {
                 alert('Error disabling diagnostic code: ' + data.error);
             }
